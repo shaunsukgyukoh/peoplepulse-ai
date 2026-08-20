@@ -39,3 +39,7 @@ artifacts/reports/*
 # Generated STEP 5 feature matrices
 artifacts/features/*
 !artifacts/features/.gitkeep
+data/synthetic/ml/*.csv
+data/synthetic/ml/*.summary.json
+artifacts/ml/**
+!artifacts/ml/.gitkeep

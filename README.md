@@ -470,3 +470,27 @@ audit.activity_report_exclusion_summary
 ```
 
 Raw workbook bytes, names, search text, titles, document names and sites are never written to these tables.
+
+
+## STEP 6 — Synthetic attrition ML experiment
+
+STEP 6 is intentionally **synthetic-demo only** for employee-level modeling. It generates a multi-month
+synthetic panel, engineers 30/60/90-day future attrition labels, applies a 3-month purged temporal split,
+and compares Logistic Regression, XGBoost, LightGBM and CatBoost. The primary ranking metric is Average
+Precision / PR-AUC, with Recall@Top-K, Brier score and calibration error reported alongside ROC-AUC.
+
+Two feature sets are evaluated:
+
+- `privacy_safe` — default; excludes direct job-search/search-activity intent proxies;
+- `synthetic_full` — synthetic-only ablation used to quantify the incremental predictive value of those
+  intrusive proxies without recommending them for real deployment.
+
+Install and run:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[ml,dev]"
+.\scripts\run_step6_experiment.ps1
+```
+
+See `docs/step6-runbook.md`, `docs/architecture-step6.md`, and `docs/model-card-step6.md`.

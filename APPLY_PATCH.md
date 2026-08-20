@@ -320,3 +320,117 @@ features.department_monthly_fusion
 
 Raw Slack IDs, names and department text are not persisted by the identity loader. Departments below
 `ACTIVITY_MIN_COHORT_SIZE` are excluded from the Slack/fused feature tables.
+
+# PeoplePulse AI STEP 6 Patch
+
+Merge this patch into the existing STEP 5 project root.
+
+## Install
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -e ".[ml,dev]"
+```
+
+STEP 6 does not reinstall PyTorch, so the verified CUDA 12.1 NLP environment is left intact.
+
+## Optional DB migration
+
+```powershell
+docker compose up -d postgres
+python scripts/apply_step6_migration.py
+```
+
+The database tables enforce `data_scope = synthetic_demo`.
+
+## Run
+
+```powershell
+.\scripts\run_step6_experiment.ps1
+```
+
+This generates a synthetic 36-month panel, runs Logistic Regression / XGBoost / LightGBM / CatBoost,
+selects on validation Average Precision, calibrates on the disjoint validation window, evaluates on the
+untouched temporal test window, compares privacy-safe vs synthetic-full features, and creates SHAP output.
+
+## Verify
+
+```powershell
+python scripts/check_step6_results.py
+```
+
+See:
+- `docs/architecture-step6.md`
+- `docs/step6-runbook.md`
+- `docs/model-card-step6.md`
+- `docs/step6-reference-results.md`
+
+## Suggested Git commit
+
+```text
+feat(step6): add synthetic attrition ML evaluation pipeline
+```
+
+Body:
+
+```text
+- add purged temporal split for 90-day attrition targets
+- compare logistic regression, XGBoost, LightGBM, and CatBoost
+- add PR-AUC, Recall@Top-K, calibration, and SHAP evaluation
+- add privacy-safe feature set and intent-proxy ablation
+- enforce synthetic-only employee-level model training
+```
+
+# PeoplePulse AI STEP 6.1 — dependency preflight + fail-fast runner
+
+Merge this patch into the existing STEP 6 project root.
+
+## Why
+
+The STEP 6 project already declares `catboost` and `matplotlib` inside the `ml` optional dependency group. The local `.venv` was missing those packages, so model training and SHAP plotting failed. The old PowerShell runner also continued after native Python commands returned non-zero exit codes and incorrectly printed a final success message.
+
+## Apply and run
+
+```powershell
+cd "C:\Users\a\Documents\Agentic-AI project\peoplepulse-ai"
+.\.venv\Scripts\Activate.ps1
+
+python -m pip install -e ".[ml,dev]"
+python scripts/check_step6_dependencies.py
+.\scripts\run_step6_experiment.ps1
+```
+
+The runner now checks dependencies before generating data and explicitly checks `$LASTEXITCODE` after every Python command. It stops immediately on failure and prints `[OK] STEP 6 experiment complete` only when every stage succeeds.
+
+# PeoplePulse AI STEP 6.2 — Python 3.11 / XGBoost compatibility fix
+
+Merge this patch into the existing project root.
+
+## Why this is needed
+
+XGBoost 3.3+ requires Python 3.12+.
+This project currently runs on Python 3.11, so the ML extra must resolve to XGBoost 3.2.x.
+
+The dependency is now selected by Python version:
+
+```toml
+"xgboost>=3.2,<3.3; python_version < '3.12'",
+"xgboost>=3.3,<4; python_version >= '3.12'",
+```
+
+## Run
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python --version
+python -m pip install --upgrade pip
+python -m pip install -e ".[ml,dev]"
+python scripts/check_step6_dependencies.py
+.\scripts\run_step6_experiment.ps1
+```
+
+Expected on Python 3.11:
+
+```text
+xgboost=3.2.0
+```
