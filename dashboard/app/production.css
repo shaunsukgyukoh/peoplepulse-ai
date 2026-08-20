@@ -1,0 +1,22 @@
+.employee-filters { margin-bottom: 12px; }
+.employee-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0 16px; }
+.star-filter { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
+.admin-token-field { max-width: 320px; }
+.employee-table-wrap table th,
+.employee-table-wrap table td { text-align: left; }
+.employee-table-wrap table th:first-child,
+.employee-table-wrap table td:first-child { width: 72px; text-align: center; }
+.star-button { border: 1px solid var(--border); background: rgba(255,255,255,.025); color: var(--muted); width: 34px; height: 34px; border-radius: 9px; font-size: 20px; line-height: 1; }
+.star-button:hover { border-color: rgba(245,199,107,.34); color: var(--warning); }
+.star-button.active { color: var(--warning); background: rgba(245,199,107,.08); border-color: rgba(245,199,107,.3); }
+.star-button:disabled { opacity: .5; cursor: wait; }
+.state-badge { display: inline-flex; align-items: center; padding: 5px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: rgba(255,255,255,.025); font-size: 11px; }
+.state-good { color: var(--accent-2); border-color: rgba(101,230,180,.25); background: rgba(101,230,180,.07); }
+.state-okay { color: var(--blue); border-color: rgba(138,185,255,.24); background: rgba(138,185,255,.07); }
+.state-needs_support { color: var(--warning); border-color: rgba(245,199,107,.28); background: rgba(245,199,107,.07); }
+.state-prefer_not_to_say,
+.state-not_reported { color: var(--muted); }
+
+@media (max-width: 900px) {
+  .admin-token-field { max-width: none; width: 100%; }
+}
