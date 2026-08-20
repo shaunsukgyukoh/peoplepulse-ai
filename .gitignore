@@ -20,6 +20,12 @@ data/local/
 models/
 mlruns/
 
+# Production employee identity imports
+# Keep templates, never commit real staff rosters.
+data/employee_directory*.csv
+data/*employee*directory*.csv
+!data/templates/employee_directory.csv.example
+
 # IDE / OS
 .vscode/
 .idea/
