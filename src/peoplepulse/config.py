@@ -49,11 +49,28 @@ class Settings(BaseSettings):
     activity_min_cohort_size: int = 5
     activity_demo_filename_prefix: str = "Synthetic_"
 
+    dashboard_step6_artifact_root: str = "artifacts/ml/step6"
+    dashboard_step6_reference_metrics_path: str = (
+        "docs/experiment-results/step6_reference_metrics.json"
+    )
+    dashboard_nlp_metrics_path: str = (
+        "docs/experiment-results/nlp_model_comparison_step3_1.json"
+    )
+    dashboard_shap_path: str = (
+        "artifacts/ml/step6/privacy_safe/shap/shap_feature_importance.csv"
+    )
+    dashboard_stream_interval_seconds: float = 2.0
+    dashboard_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def dashboard_cors_origins(self) -> list[str]:
+        return [origin.strip() for origin in self.dashboard_allowed_origins.split(",") if origin.strip()]
 
     @property
     def postgres_dsn(self) -> str:

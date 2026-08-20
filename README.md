@@ -494,3 +494,24 @@ pip install -e ".[ml,dev]"
 ```
 
 See `docs/step6-runbook.md`, `docs/architecture-step6.md`, and `docs/model-card-step6.md`.
+
+## STEP 7 — PeoplePulse Product Dashboard
+
+STEP 7 adds the portfolio UI over the existing pipelines:
+
+- Next.js 16.3.1 + React 19.2 + TypeScript
+- Tailwind CSS 4.3 + Apache ECharts 6
+- Executive Overview
+- FastAPI Server-Sent Events for real-time derived Slack signals
+- three-file monthly report upload
+- synthetic retention model evaluation and intent-proxy ablation
+- SHAP global feature importance
+- NLP benchmark / latency view
+
+Start it with:
+
+```powershell
+.\scripts\run_step7_dashboard.ps1
+```
+
+Then open `http://localhost:3000`. Employee-level attrition content remains synthetic-demo-only; production-facing analytics remain department/cohort scoped.

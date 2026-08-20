@@ -118,7 +118,7 @@ services:
       - peoplepulse-net
 
   api:
-    profiles: ["activity"]
+    profiles: ["activity", "dashboard"]
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -133,16 +133,44 @@ services:
       POSTGRES_PORT: 5432
       EMPLOYEE_HASH_KEY: ${EMPLOYEE_HASH_KEY:-replace-with-a-long-random-secret}
       ACTIVITY_ADMIN_TOKEN: ${ACTIVITY_ADMIN_TOKEN:-replace-with-a-long-random-admin-token}
-      ACTIVITY_DOMAIN_POLICY_PATH: configs/activity_domain_policy.json
-      ACTIVITY_INTERNAL_DOMAINS: ${ACTIVITY_INTERNAL_DOMAINS:-}
+      ACTIVITY_CONTENT_POLICY_PATH: configs/activity_content_policy.json
       ACTIVITY_MAX_UPLOAD_BYTES: ${ACTIVITY_MAX_UPLOAD_BYTES:-20971520}
       ACTIVITY_WORKDAY_START_HOUR: ${ACTIVITY_WORKDAY_START_HOUR:-9}
       ACTIVITY_WORKDAY_END_HOUR: ${ACTIVITY_WORKDAY_END_HOUR:-18}
+      ACTIVITY_PRIVACY_MODE: ${ACTIVITY_PRIVACY_MODE:-aggregate}
+      ACTIVITY_MIN_COHORT_SIZE: ${ACTIVITY_MIN_COHORT_SIZE:-5}
+      ACTIVITY_DEMO_FILENAME_PREFIX: ${ACTIVITY_DEMO_FILENAME_PREFIX:-Synthetic_}
+      DASHBOARD_STEP6_ARTIFACT_ROOT: /artifacts/ml/step6
+      DASHBOARD_STEP6_REFERENCE_METRICS_PATH: /app/docs/experiment-results/step6_reference_metrics.json
+      DASHBOARD_NLP_METRICS_PATH: /app/docs/experiment-results/nlp_model_comparison_step3_1.json
+      DASHBOARD_SHAP_PATH: /artifacts/ml/step6/privacy_safe/shap/shap_feature_importance.csv
+      DASHBOARD_STREAM_INTERVAL_SECONDS: ${DASHBOARD_STREAM_INTERVAL_SECONDS:-2}
+      DASHBOARD_ALLOWED_ORIGINS: ${DASHBOARD_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+    volumes:
+      - ./artifacts:/artifacts:ro
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - peoplepulse-net
+
+  dashboard:
+    profiles: ["dashboard"]
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: peoplepulse-dashboard
+    restart: unless-stopped
+    environment:
+      PEOPLEPULSE_API_INTERNAL_URL: http://api:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    depends_on:
+      api:
+        condition: service_started
     networks:
       - peoplepulse-net
 

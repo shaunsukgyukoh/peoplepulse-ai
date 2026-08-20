@@ -434,3 +434,113 @@ Expected on Python 3.11:
 ```text
 xgboost=3.2.0
 ```
+
+# PeoplePulse AI STEP 7 Patch
+
+Merge the STEP 7 patch into the existing repository root.
+
+## 1. Keep the existing `.env`
+
+Do not replace your real `.env`. Add the STEP 7 variables from `.env.example` only if needed.
+
+## 2. Preflight
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python scripts/check_step7_dashboard.py
+```
+
+## 3. Build and start
+
+```powershell
+.\scripts\run_step7_dashboard.ps1
+```
+
+Open:
+
+```text
+http://localhost:3000
+```
+
+The API must show:
+
+```text
+http://localhost:8000/health
+```
+
+## 4. Live Slack
+
+Keep the verified Windows CUDA worker running:
+
+```powershell
+.\scripts\run_nlp_worker_local.ps1
+```
+
+Start the listener:
+
+```powershell
+docker compose --profile slack up -d slack-listener
+```
+
+## 5. Refresh STEP 6 metrics / SHAP when desired
+
+```powershell
+.\scripts\run_step6_experiment.ps1
+```
+
+The dashboard automatically prefers local generated artifacts and falls back to checked-in reference metrics when they are absent.
+
+## 6. Git commit
+
+```powershell
+git add .
+git commit -m "feat(step7): add real-time PeoplePulse analytics dashboard" `
+  -m "Add Next.js 16.3 dashboard with Executive, Slack SSE, report upload, ML evaluation, SHAP, and performance views." `
+  -m "Add FastAPI dashboard read endpoints and server-sent events over derived privacy-aware signals." `
+  -m "Keep production analytics cohort-scoped and employee-level attrition evaluation synthetic-only."
+```
+
+# PeoplePulse AI STEP 7.1 — Dashboard Docker public-directory fix
+
+Merge this patch into the project root.
+
+## Cause
+
+The Next.js build succeeded, but the runner stage failed on:
+
+```dockerfile
+COPY --from=builder /app/public ./public
+```
+
+because the dashboard did not yet contain a `public/` directory.
+
+## Fix
+
+- Add `dashboard/public/.gitkeep`.
+- Ensure the builder creates `public/` before `next build`.
+- Copy it with the same non-root ownership as the standalone output.
+- Pre-apply Next.js 16's `.next/dev/types/**/*.ts` tsconfig include.
+
+## Verify
+
+```powershell
+python scripts/check_step7_dashboard_docker.py
+
+docker compose --profile dashboard build --no-cache dashboard
+
+docker compose --profile dashboard up -d api dashboard
+
+docker compose --profile dashboard ps
+```
+
+Expected dashboard port:
+
+```text
+0.0.0.0:3000->3000/tcp
+```
+
+Then open:
+
+```text
+http://localhost:3000
+```
