@@ -52,3 +52,7 @@ dashboard/.env*.local
 artifacts/monitoring/*
 !artifacts/monitoring/.gitkeep
 mlflow.db
+
+# STEP 10 live evaluation outputs (publish intentionally with --publish)
+artifacts/evaluation/step10/*
+!artifacts/evaluation/step10/.gitkeep

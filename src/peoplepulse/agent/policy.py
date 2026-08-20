@@ -18,8 +18,15 @@ _RAW_CONTENT = re.compile(
     r"(원문\s*(메시지|검색어|문서)|슬랙\s*원문|검색어\s*원문|문서명\s*원문|raw\s*(slack|message|query|document))",
     re.IGNORECASE,
 )
+_MENTAL_HEALTH = re.compile(
+    r"((우울|불안장애|정신질환|정신건강|번아웃|공황|자살|자해).*(진단|판단|추정|분류|누가|직원)|"
+    r"(diagnos|depress|mental\s*health|suicid|self[-\s]?harm).*(employee|worker|staff|who))",
+    re.IGNORECASE,
+)
+
+
 _INDIVIDUAL = re.compile(
-    r"(누가\s*(퇴사|위험|불만|과부하)|어떤\s*직원|개별\s*직원|개인별|직원별\s*(순위|랭킹|위험|확률)|이름을?\s*(알려|보여)|employee[_\s-]?id|slack[_\s-]?id|\bU[A-Z0-9]{6,}\b)",
+    r"(누가\s*(퇴사|위험|불만|과부하)|퇴사\s*위험.*직원|어떤\s*직원|개별\s*직원|개인별|직원별.*(퇴사|순위|랭킹|위험|확률)|이름을?\s*(알려|보여)|employee[_\s-]?id|slack[_\s-]?id|\bU[A-Z0-9]{6,}\b)",
     re.IGNORECASE,
 )
 
@@ -37,6 +44,11 @@ def evaluate_request(message: str, *, scope: str) -> PolicyDecision:
         return PolicyDecision(
             False,
             "원문 Slack 메시지, 원문 검색어, 원문 문서명은 Analyst 도구에 노출되지 않습니다. 집계된 파생 신호만 조회할 수 있습니다.",
+        )
+    if _MENTAL_HEALTH.search(text):
+        return PolicyDecision(
+            False,
+            "PeoplePulse의 업무 메시지 신호를 정신건강·질환 진단이나 개인 상태 판정에 사용하지 않습니다.",
         )
     if scope == "aggregate" and _INDIVIDUAL.search(text):
         return PolicyDecision(

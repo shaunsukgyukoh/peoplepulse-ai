@@ -58,3 +58,24 @@ def chat(message: str, *, scope: str, thread_id: str) -> dict[str, Any]:
     result = _agent(settings, scope).invoke(message, thread_id=thread_id)
     result["blocked"] = False
     return result
+
+def evaluation_chat(message: str, *, scope: str, thread_id: str) -> dict[str, Any]:
+    """Internal STEP 10 evaluator path. Evidence is never exposed by the public chat API."""
+    settings = get_settings()
+    settings.validate_agent_runtime(scope=scope)
+    decision = evaluate_request(message, scope=scope)
+    if not decision.allowed:
+        return {
+            "answer": decision.reason,
+            "blocked": True,
+            "sources": ["peoplepulse.agent.policy"],
+            "tool_calls": [],
+            "evidence": [],
+            "model": settings.agent_ollama_model,
+            "scope": scope,
+            "thread_id": thread_id,
+        }
+    result = _agent(settings, scope).invoke(message, thread_id=thread_id, include_evidence=True)
+    result["blocked"] = False
+    return result
+

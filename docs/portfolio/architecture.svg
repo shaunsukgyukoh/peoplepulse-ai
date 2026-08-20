@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">PeoplePulse AI End-to-End Architecture</title>
+  <desc id="desc">Privacy-aware streaming, batch analytics, ML, dashboard, MLOps and local LangGraph agent architecture.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#0b1020"/><stop offset="1" stop-color="#111827"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="6" stdDeviation="8" flood-opacity=".25"/></filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#93c5fd"/></marker>
+    <style>
+      .title{font:700 42px Inter,Arial,sans-serif;fill:#f8fafc}.sub{font:500 20px Inter,Arial,sans-serif;fill:#94a3b8}
+      .group{fill:#111827;stroke:#334155;stroke-width:2;rx:22}.box{fill:#172033;stroke:#475569;stroke-width:1.6;rx:16;filter:url(#shadow)}
+      .privacy{fill:#10271f;stroke:#22c55e}.agent{fill:#211537;stroke:#a78bfa}.mlops{fill:#2a1b0f;stroke:#f59e0b}.product{fill:#0d2430;stroke:#22d3ee}.ml{fill:#1d2138;stroke:#818cf8}
+      .h{font:700 21px Inter,Arial,sans-serif;fill:#f8fafc}.t{font:500 16px Inter,Arial,sans-serif;fill:#cbd5e1}.small{font:500 14px Inter,Arial,sans-serif;fill:#94a3b8}
+      .line{stroke:#93c5fd;stroke-width:2.2;fill:none;marker-end:url(#arrow)}.dash{stroke:#64748b;stroke-width:1.8;stroke-dasharray:7 7;fill:none;marker-end:url(#arrow)}
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <text x="70" y="70" class="title">PeoplePulse AI — End-to-End Architecture</text>
+  <text x="70" y="108" class="sub">Privacy-aware Employee Retention Intelligence · Streaming NLP · Temporal ML · MLOps · Local Agentic AI</text>
+
+  <rect x="60" y="150" width="260" height="610" class="group"/><text x="88" y="188" class="h">Data Sources</text>
+  <rect x="88" y="220" width="204" height="92" class="box"/><text x="112" y="255" class="h">Slack Events</text><text x="112" y="284" class="small">Work channels · Socket Mode</text>
+  <rect x="88" y="340" width="204" height="112" class="box"/><text x="112" y="375" class="h">3 Monthly Reports</text><text x="112" y="404" class="small">.xls / .xlsx actual schema</text><text x="112" y="428" class="small">Manager upload</text>
+  <rect x="88" y="480" width="204" height="92" class="box"/><text x="112" y="515" class="h">Synthetic Data</text><text x="112" y="544" class="small">Portfolio ML / demo only</text>
+
+  <rect x="360" y="150" width="330" height="610" class="group"/><text x="388" y="188" class="h">Privacy + Processing</text>
+  <rect x="392" y="220" width="266" height="112" class="box privacy"/><text x="418" y="254" class="h">Privacy Boundary</text><text x="418" y="282" class="t">PII masking · HMAC IDs</text><text x="418" y="307" class="small">Raw content not durably exposed</text>
+  <rect x="392" y="360" width="266" height="112" class="box"/><text x="418" y="394" class="h">Realtime NLP</text><text x="418" y="422" class="t">Redis Streams → KLUE RoBERTa</text><text x="418" y="447" class="small">Derived signals only</text>
+  <rect x="392" y="500" width="266" height="126" class="box"/><text x="418" y="534" class="h">Batch + Feature Store</text><text x="418" y="562" class="t">Pandera · forward-fill · filter</text><text x="418" y="587" class="small">7d / 30d / 90d + monthly fusion</text><text x="418" y="610" class="small">PostgreSQL</text>
+  <rect x="392" y="654" width="266" height="76" class="box privacy"/><text x="418" y="686" class="h">Production Rule</text><text x="418" y="713" class="small">Real data → cohort aggregation only</text>
+
+  <rect x="730" y="150" width="360" height="610" class="group"/><text x="758" y="188" class="h">ML + Product</text>
+  <rect x="760" y="220" width="300" height="130" class="box ml"/><text x="786" y="254" class="h">Attrition ML</text><text x="786" y="282" class="t">Purged temporal split</text><text x="786" y="307" class="small">4 model families · calibration · SHAP</text><text x="786" y="330" class="small">Employee-level = synthetic only</text>
+  <rect x="760" y="385" width="300" height="118" class="box product"/><text x="786" y="419" class="h">FastAPI</text><text x="786" y="447" class="t">REST · SSE · read APIs</text><text x="786" y="475" class="small">Dashboard / monitoring / agent tools</text>
+  <rect x="760" y="538" width="300" height="112" class="box product"/><text x="786" y="572" class="h">Next.js Dashboard</text><text x="786" y="600" class="t">Executive · Slack · Upload · ML</text><text x="786" y="625" class="small">SHAP · performance · Analyst chat</text>
+
+  <rect x="1130" y="150" width="410" height="610" class="group"/><text x="1158" y="188" class="h">MLOps + Agentic AI</text>
+  <rect x="1160" y="220" width="350" height="130" class="box mlops"/><text x="1186" y="254" class="h">MLOps</text><text x="1186" y="282" class="t">MLflow · Evidently</text><text x="1186" y="307" class="small">Prometheus · Grafana · drift alerts</text><text x="1186" y="330" class="small">Experiment + service observability</text>
+  <rect x="1160" y="385" width="350" height="180" class="box agent"/><text x="1186" y="419" class="h">Local AI Analyst</text><text x="1186" y="447" class="t">LangGraph + Ollama / qwen3:8b</text><text x="1186" y="475" class="small">Deterministic policy guard</text><text x="1186" y="500" class="small">Allowlisted read-only tools</text><text x="1186" y="525" class="small">No arbitrary SQL · source traces</text><text x="1186" y="550" class="small">In-memory conversation checkpoint</text>
+  <rect x="1160" y="600" width="350" height="130" class="box privacy"/><text x="1186" y="634" class="h">Blocked Before LLM</text><text x="1186" y="662" class="small">Individual real-employee risk · raw content</text><text x="1186" y="686" class="small">HR decisions · mental-health diagnosis</text><text x="1186" y="710" class="small">Direct employee / Slack identifiers</text>
+
+  <path d="M292 266 C340 266 344 276 392 276" class="line"/><path d="M292 395 C340 395 344 555 392 555" class="line"/>
+  <path d="M292 526 C340 526 344 585 392 585" class="dash"/><path d="M658 416 C708 416 710 443 760 443" class="line"/>
+  <path d="M658 560 C710 560 710 285 760 285" class="line"/><path d="M658 590 C710 590 710 443 760 443" class="line"/>
+  <path d="M1060 443 C1110 443 1110 285 1160 285" class="line"/><path d="M1060 594 C1110 594 1110 475 1160 475" class="line"/>
+  <path d="M1160 475 C1115 475 1108 443 1060 443" class="dash"/>
+
+  <text x="70" y="825" class="small">Default portfolio deployment: Windows host Ollama/CUDA + Docker Compose services · local/self-hosted · no required paid LLM API</text>
+  <text x="70" y="855" class="small">Evaluation: tool-call accuracy · citation/source trace · numeric-grounding hallucination proxy · privacy policy · p50/p95 latency</text>
+</svg>

@@ -118,7 +118,7 @@ services:
       - peoplepulse-net
 
   api:
-    profiles: ["activity", "dashboard", "mlops", "agent"]
+    profiles: ["activity", "dashboard", "mlops", "agent", "portfolio"]
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -168,7 +168,7 @@ services:
       - peoplepulse-net
 
   dashboard:
-    profiles: ["dashboard", "agent"]
+    profiles: ["dashboard", "agent", "portfolio"]
     build:
       context: ./dashboard
       dockerfile: Dockerfile
@@ -187,7 +187,7 @@ services:
 
 
   mlflow:
-    profiles: ["mlops"]
+    profiles: ["mlops", "portfolio"]
     build:
       context: .
       dockerfile: Dockerfile.mlflow
@@ -221,7 +221,7 @@ services:
       - peoplepulse-net
 
   monitoring-worker:
-    profiles: ["mlops"]
+    profiles: ["mlops", "portfolio"]
     build:
       context: .
       dockerfile: Dockerfile.monitoring
@@ -263,7 +263,7 @@ services:
       - peoplepulse-net
 
   prometheus:
-    profiles: ["mlops"]
+    profiles: ["mlops", "portfolio"]
     image: prom/prometheus:v3.13.2
     container_name: peoplepulse-prometheus
     restart: unless-stopped
@@ -287,7 +287,7 @@ services:
       - peoplepulse-net
 
   grafana:
-    profiles: ["mlops"]
+    profiles: ["mlops", "portfolio"]
     image: grafana/grafana:13.1.0
     container_name: peoplepulse-grafana
     restart: unless-stopped

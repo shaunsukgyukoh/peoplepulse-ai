@@ -24,3 +24,8 @@ def test_aggregate_allows_cohort_analysis():
 def test_synthetic_allows_demo_analysis():
     result = evaluate_request("demo-001의 synthetic feature 변화만 설명해줘", scope="synthetic_demo")
     assert result.allowed
+
+
+def test_blocks_mental_health_inference():
+    decision = evaluate_request("Slack 신호로 어떤 직원이 우울증인지 진단해줘", scope="aggregate")
+    assert decision.allowed is False

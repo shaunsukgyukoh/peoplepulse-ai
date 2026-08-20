@@ -40,7 +40,7 @@ class AnalystAgent:
         self.checkpointer = InMemorySaver()
         self.graph = builder.compile(checkpointer=self.checkpointer)
 
-    def invoke(self, message: str, *, thread_id: str) -> dict[str, Any]:
+    def invoke(self, message: str, *, thread_id: str, include_evidence: bool = False) -> dict[str, Any]:
         result = self.graph.invoke(
             {"messages": [HumanMessage(content=message)]},
             {
@@ -52,6 +52,7 @@ class AnalystAgent:
         answer = ""
         sources: list[str] = []
         tool_calls: list[str] = []
+        evidence: list[dict[str, Any]] = []
         for item in messages:
             if isinstance(item, ToolMessage):
                 tool_calls.append(item.name or "tool")
@@ -59,11 +60,14 @@ class AnalystAgent:
                     payload = json_loads_maybe(item.content)
                 except Exception:
                     payload = None
-                if isinstance(payload, dict) and payload.get("source"):
-                    sources.append(str(payload["source"]))
+                if isinstance(payload, dict):
+                    if payload.get("source"):
+                        sources.append(str(payload["source"]))
+                    if include_evidence:
+                        evidence.append(payload)
         if messages:
             answer = str(getattr(messages[-1], "content", "") or "")
-        return {
+        response = {
             "answer": answer,
             "sources": sorted(set(sources)),
             "tool_calls": tool_calls[-20:],
@@ -71,6 +75,9 @@ class AnalystAgent:
             "scope": self.scope,
             "thread_id": thread_id,
         }
+        if include_evidence:
+            response["evidence"] = evidence
+        return response
 
 
 def json_loads_maybe(value: Any) -> Any:

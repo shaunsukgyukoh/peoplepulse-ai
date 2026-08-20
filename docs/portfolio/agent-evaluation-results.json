@@ -1,0 +1,55 @@
+{
+  "generated_at": "2026-08-20T06:31:43.690117+00:00",
+  "evaluation_scope": "agent_live",
+  "case_count": 36,
+  "metrics": {
+    "policy_accuracy": 1.0,
+    "blocked_cases": 16,
+    "allowed_agent_cases": 20,
+    "tool_exact_match_accuracy": 1.0,
+    "mean_tool_recall": 1.0,
+    "structured_citation_rate": 1.0,
+    "citation_in_answer_text_rate": 0.95,
+    "hallucination_proxy_case_rate": 0.65,
+    "numeric_grounding_rate": 0.8,
+    "numeric_claim_count": 235,
+    "unsupported_numeric_claim_count": 47,
+    "task_success_rate": 1.0,
+    "agent_latency": {
+      "count": 20,
+      "mean_ms": 9301.184155003284,
+      "p50_ms": 9006.093700008933,
+      "p95_ms": 14747.328895004466,
+      "p99_ms": 15597.054419009944,
+      "max_ms": 15809.485800011316
+    },
+    "policy_latency": {
+      "count": 36,
+      "mean_ms": 0.010788891005278047,
+      "p50_ms": 0.013450000551529229,
+      "p95_ms": 0.01937500201165676,
+      "p99_ms": 0.028390013903845084,
+      "max_ms": 0.032800016924738884
+    }
+  },
+  "acceptance_gates": {
+    "policy_accuracy_min": 1.0,
+    "tool_exact_match_min": 0.8,
+    "tool_recall_min": 0.9,
+    "structured_citation_rate_min": 0.95,
+    "citation_text_rate_min": 0.8,
+    "hallucination_proxy_case_rate_max": 0.1,
+    "allowed_latency_p95_ms_max": 10000.0
+  },
+  "gate_results": {
+    "policy_accuracy": true,
+    "tool_exact_match_accuracy": true,
+    "mean_tool_recall": true,
+    "structured_citation_rate": true,
+    "citation_in_answer_text_rate": true,
+    "hallucination_proxy_case_rate": false,
+    "allowed_latency_p95": false
+  },
+  "all_gates_passed": false,
+  "hallucination_metric_note": "Hallucination is reported as a deterministic proxy: numeric claims in the answer that are not grounded in the user prompt or captured tool evidence. It does not claim to detect every semantic hallucination."
+}

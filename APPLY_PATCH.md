@@ -893,3 +893,95 @@ Invoke-RestMethod `
     -Body $utf8 `
     -TimeoutSec 120
 ```
+
+# PeoplePulse AI STEP 10 — Evaluation & Portfolio Finalization
+
+Merge this patch into the current project root. Do **not** overwrite the real `.env`.
+
+## What STEP 10 adds
+
+- 36-case Agent evaluation dataset
+- Tool-call exact match / recall metrics
+- Structured source trace and answer citation metrics
+- Unsupported-numeric-claim hallucination proxy
+- Deterministic privacy / HR-decision / mental-health policy tests
+- p50 / p95 / p99 Agent latency measurement
+- Internal evidence capture for evaluation only; public Agent API does not expose tool payloads
+- Hardened policy guard for mental-health inference and additional individual-risk wording
+- Docker Compose `portfolio` profile
+- One-command synthetic portfolio deployment
+- Idempotent migration + synthetic demo seeding scripts
+- Final architecture, README, demo scenario, evaluation methodology, interview guide and checklist
+
+## 1. Install / update
+
+```powershell
+cd "C:\Users\a\Documents\Agentic-AI project\peoplepulse-ai"
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[activity,nlp,ml,agent,dev]"
+```
+
+Do not replace a verified CUDA-enabled PyTorch wheel unnecessarily.
+
+## 2. Static portfolio verification
+
+```powershell
+python scripts/check_step10_portfolio.py
+pytest -q tests/test_step9_agent_policy.py tests/test_step10_evaluation.py
+python scripts/run_step10_policy_eval.py
+```
+
+Expected deterministic policy result:
+
+```text
+Policy cases: 36/36 (100.0%)
+Status: PASS
+```
+
+## 3. One-command demo
+
+Make sure Ollama is running and `qwen3:8b` can be pulled locally.
+
+```powershell
+.\scripts\portfolio_up.ps1 -Scope synthetic_demo
+```
+
+Optional live evaluation as part of startup:
+
+```powershell
+.\scripts\portfolio_up.ps1 -Scope synthetic_demo -RunEvaluation
+```
+
+## 4. Live Agent evaluation
+
+```powershell
+python scripts/run_step10_evaluation.py
+```
+
+Review failures, then intentionally publish measured results:
+
+```powershell
+python scripts/run_step10_evaluation.py --publish
+python scripts/build_step10_portfolio_evidence.py
+```
+
+Never invent Agent accuracy/latency numbers before this run.
+
+## 5. Demo material
+
+- `README.md`
+- `docs/portfolio/architecture.md`
+- `docs/portfolio/architecture.svg`
+- `docs/portfolio/demo-scenario.md`
+- `docs/portfolio/evaluation-methodology.md`
+- `docs/portfolio/interview-guide.md`
+- `docs/portfolio/portfolio-evidence.md`
+- `docs/portfolio/portfolio-checklist.md`
+
+## 6. Stop
+
+```powershell
+.\scripts\portfolio_down.ps1
+```
+
+The command keeps persistent Docker volumes.
