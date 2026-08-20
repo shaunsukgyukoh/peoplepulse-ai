@@ -1,0 +1,27 @@
+{
+  "task": "korean_workplace_multilabel_signal_classification",
+  "primary_metric": "macro_f1",
+  "secondary_metrics": ["micro_f1", "per_label_f1", "latency_ms_mean", "latency_ms_p95"],
+  "candidates": [
+    {
+      "name": "tfidf-logreg",
+      "type": "baseline",
+      "reason": "Fast, explainable lexical baseline using Korean word and character n-grams."
+    },
+    {
+      "name": "beomi/KcELECTRA-small-v2022",
+      "type": "transformer",
+      "reason": "Efficiency-first Korean noisy/conversational-text candidate for local real-time inference."
+    },
+    {
+      "name": "beomi/KcELECTRA-base",
+      "type": "transformer",
+      "reason": "Higher-capacity Korean noisy/conversational-text candidate."
+    },
+    {
+      "name": "klue/roberta-base",
+      "type": "transformer",
+      "reason": "General Korean NLU reference model trained in the KLUE ecosystem."
+    }
+  ]
+}

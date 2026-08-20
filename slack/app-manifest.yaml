@@ -1,0 +1,27 @@
+_metadata:
+  major_version: 1
+
+display_information:
+  name: PeoplePulse AI
+  description: Privacy-aware workforce signal ingestion portfolio app
+  background_color: "#1F2937"
+
+features:
+  bot_user:
+    display_name: PeoplePulse AI
+    always_online: false
+
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - groups:history
+
+settings:
+  event_subscriptions:
+    bot_events:
+      - message.channels
+      - message.groups
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

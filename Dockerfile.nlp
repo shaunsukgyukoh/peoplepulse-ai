@@ -1,0 +1,17 @@
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    HF_HOME=/models/.cache/huggingface
+
+WORKDIR /app
+
+COPY pyproject.toml README.md ./
+COPY src ./src
+# Portable Docker default: CPU PyTorch. Host Windows/NVIDIA training uses the
+# explicit CUDA wheel documented in README. GPU-enabled Docker is a later step.
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
+    && python -m pip install --no-cache-dir '.[nlp]'
+
+CMD ["python", "-m", "peoplepulse.nlp.worker"]

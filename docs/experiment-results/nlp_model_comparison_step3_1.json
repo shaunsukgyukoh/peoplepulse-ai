@@ -1,0 +1,54 @@
+[
+  {
+    "model":"klue\/roberta-base",
+    "family":"transformer",
+    "evaluation":"val-tuned thresholds",
+    "macro_f1":0.7988209159,
+    "micro_f1":0.7402597403,
+    "macro_precision":0.7315014368,
+    "macro_recall":0.96875,
+    "latency_ms_mean":6.6106740749,
+    "latency_ms_p95":7.2581399923,
+    "device":"cuda",
+    "metrics_path":"artifacts\\models\\klue__roberta-base\\metrics_tuned.json"
+  },
+  {
+    "model":"tfidf-logreg",
+    "family":"baseline",
+    "evaluation":"val-tuned thresholds",
+    "macro_f1":0.5565359477,
+    "micro_f1":0.5,
+    "macro_precision":0.5928571429,
+    "macro_recall":0.7673611111,
+    "latency_ms_mean":2.2551611115,
+    "latency_ms_p95":2.610380001,
+    "device":"cpu",
+    "metrics_path":"artifacts\\models\\tfidf-logreg\\metrics_tuned.json"
+  },
+  {
+    "model":"beomi\/KcELECTRA-base",
+    "family":"transformer",
+    "evaluation":"val-tuned thresholds",
+    "macro_f1":0.4762963756,
+    "micro_f1":0.4253731343,
+    "macro_precision":0.3529807966,
+    "macro_recall":0.9479166667,
+    "latency_ms_mean":6.0725296285,
+    "latency_ms_p95":6.6625599888,
+    "device":"cuda",
+    "metrics_path":"artifacts\\models\\beomi__KcELECTRA-base\\metrics_tuned.json"
+  },
+  {
+    "model":"beomi\/KcELECTRA-small-v2022",
+    "family":"transformer",
+    "evaluation":"val-tuned thresholds",
+    "macro_f1":0.2627501884,
+    "micro_f1":0.261682243,
+    "macro_precision":0.1576532128,
+    "macro_recall":0.9166666667,
+    "latency_ms_mean":7.0520425932,
+    "latency_ms_p95":7.8070149997,
+    "device":"cuda",
+    "metrics_path":"artifacts\\models\\beomi__KcELECTRA-small-v2022\\metrics_tuned.json"
+  }
+]
