@@ -1,0 +1,8 @@
+slack_user_id,employee_name,department,job_title,is_key_staff,is_active,self_report_status
+U01234567,홍길동,연구개발본부,선임연구원,false,true,
+U07654321,김예시,제품본부,팀장,true,true,okay
+
+# 실제 직원 정보가 포함된 파일은 Git에 커밋하지 마세요.
+# self_report_status: good | okay | needs_support | prefer_not_to_say | 빈 값
+# self_report_status는 직원이 자발적으로 제공한 값만 입력하세요.
+# is_key_staff는 관리자 수동 지정이며 AI/NLP/퇴사위험 점수로 자동 생성하지 않습니다.
