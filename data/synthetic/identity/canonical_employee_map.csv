@@ -1,0 +1,4 @@
+canonical_employee_key,slack_user_id,activity_report_name,department
+demo-001,UDEMO001,김가람,연구개발본부
+demo-002,UDEMO002,이도윤,전략혁신본부
+demo-003,UDEMO003,박서진,경영관리본부

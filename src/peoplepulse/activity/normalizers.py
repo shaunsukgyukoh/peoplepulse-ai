@@ -41,6 +41,12 @@ def parse_korean_duration_seconds(value: object) -> float:
     return hours * 3600 + minutes * 60 + seconds
 
 
+def normalize_department(value: object) -> str:
+    """Normalize exported department labels to the leaf department segment."""
+    text = str(value or "").strip()
+    return text.split(">")[-1].strip()
+
+
 @dataclass(frozen=True)
 class NormalizedReport:
     report_type: ReportType
@@ -89,9 +95,7 @@ def _fill_identity(frame: pd.DataFrame) -> pd.DataFrame:
     # The real exports are not consistent: some reports include "회사 > 부서",
     # while others contain only the final department label. Normalize to the
     # leaf segment so the same department can be joined across all three files.
-    frame["department"] = (
-        frame["department"].astype(str).str.split(">").str[-1].str.strip()
-    )
+    frame["department"] = frame["department"].map(normalize_department)
     return frame
 
 

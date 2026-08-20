@@ -2,9 +2,31 @@
 
 **Privacy-Aware Employee Retention Intelligence Platform — portfolio project**
 
-Current milestone: **STEP 3.1 — CUDA-correct evaluation + per-label threshold tuning + production candidate selection**.
+Current milestone: **STEP 5 — Identity Resolution + 7/30/90d Slack Rollups + ML-ready Feature Store**.
 
 > Scope note: STEP 3 extracts message-level linguistic signals. It does not diagnose mental health and its outputs are not intended to automate hiring, firing, promotion, discipline, compensation, or other employment actions.
+
+
+## STEP 5 — Canonical identity + feature fusion
+
+STEP 5 adds a source-aware identity layer instead of fuzzy matching Slack IDs to names.
+
+```text
+Production-safe path
+Slack User ID -> local explicit mapping -> HMAC department mapping
+message_nlp_signal -> employee-first 7/30/90d rollups -> department aggregation
++ department_monthly_activity -> department_monthly_fusion
+
+Synthetic portfolio path
+Slack demo ID -> canonical demo employee <- synthetic activity-report name
+-> HMAC-only synthetic identity map
+-> employee 7/30/90d Slack features + monthly activity features
+-> synthetic_employee_retention_feature
+```
+
+Important design boundary: **employee-level fused features are generated only for synthetic portfolio data**. The production path persists cohort/department features only and suppresses cohorts below the configured minimum size. Raw names, Slack IDs, search text, document names, and browsing details are not written to the STEP 5 feature tables.
+
+Runbook: `docs/step5-runbook.md`. Architecture: `docs/architecture-step5.md`.
 
 ## Architecture so far
 
