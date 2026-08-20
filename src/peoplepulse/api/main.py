@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from peoplepulse.api.activity import router as activity_router
+from peoplepulse.api.agent import router as agent_router
 from peoplepulse.api.dashboard import router as dashboard_router
 from peoplepulse.api.monitoring import router as monitoring_router
 from peoplepulse.config import get_settings
@@ -14,7 +15,7 @@ from peoplepulse.monitoring.prometheus import observe_request, refresh_monitorin
 
 app = FastAPI(
     title="PeoplePulse AI API",
-    version="0.8.0",
+    version="0.9.0",
     description="Privacy-aware People Analytics portfolio API",
 )
 settings = get_settings()
@@ -26,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(activity_router)
+app.include_router(agent_router)
 app.include_router(dashboard_router)
 app.include_router(monitoring_router)
 

@@ -534,3 +534,26 @@ Run:
 ```
 
 Use `-Scope aggregate` for production-safe cohort drift. Employee-level model monitoring remains synthetic-demo-only. See `docs/step8-runbook.md`.
+
+## STEP 9 — Local Ollama + LangGraph Analyst Agent
+
+STEP 9 adds a local, self-hosted analyst chat layer over the existing privacy-safe analytics stack.
+
+- Ollama host-native inference (`qwen3:8b` default)
+- LangGraph `StateGraph` + `ToolNode` orchestration
+- fixed read-only analytics tools for Feature Store, Slack derived signals, STEP 6 ML, SHAP, STEP 8 drift, and MLflow experiment metadata
+- no arbitrary SQL generation
+- production `aggregate` scope only
+- synthetic employee snapshots only in `synthetic_demo` with `demo-*` keys
+- deterministic blocking for raw employee content and employment-decision requests
+- Next.js Analyst Chat integrated into the existing dashboard
+
+Run:
+
+```powershell
+.\scripts\setup_step9_ollama.ps1
+python scripts/check_step9_agent.py
+.\scripts\run_step9_agent.ps1 -Scope aggregate
+```
+
+Open `http://localhost:3000/#analyst`.

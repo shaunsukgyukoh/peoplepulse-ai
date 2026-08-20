@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     mlops_predictions_path: str = "artifacts/ml/step6/privacy_safe/test_predictions.csv"
     mlops_monitoring_artifact_root: str = "artifacts/monitoring"
 
+    agent_ollama_base_url: str = "http://localhost:11434"
+    agent_ollama_model: str = "qwen3:8b"
+    agent_temperature: float = 0.0
+    agent_num_ctx: int = 16384
+    agent_recursion_limit: int = 12
+    agent_default_scope: str = "aggregate"
+
     @property
     def mlops_monitoring_summary_path(self) -> str:
         return str(Path(self.mlops_monitoring_artifact_root) / "latest_summary.json")
@@ -101,6 +108,28 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
+
+    def validate_agent_runtime(self, *, scope: str | None = None) -> None:
+        selected = scope or self.agent_default_scope
+        errors: list[str] = []
+        if selected not in {"aggregate", "synthetic_demo"}:
+            errors.append("Agent scope must be aggregate or synthetic_demo")
+        if selected == "synthetic_demo" and self.app_env == "production":
+            errors.append("synthetic_demo agent scope is blocked when APP_ENV=production")
+        if selected == "synthetic_demo" and self.employee_hash_key in {"", "replace-with-a-long-random-secret"}:
+            errors.append("synthetic_demo agent scope requires the existing EMPLOYEE_HASH_KEY")
+        if not self.agent_ollama_base_url.startswith(("http://", "https://")):
+            errors.append("AGENT_OLLAMA_BASE_URL must be an http(s) URL")
+        if not self.agent_ollama_model.strip():
+            errors.append("AGENT_OLLAMA_MODEL must not be blank")
+        if not 0 <= self.agent_temperature <= 2:
+            errors.append("AGENT_TEMPERATURE must be between 0 and 2")
+        if self.agent_num_ctx < 4096:
+            errors.append("AGENT_NUM_CTX must be >= 4096")
+        if not 4 <= self.agent_recursion_limit <= 32:
+            errors.append("AGENT_RECURSION_LIMIT must be between 4 and 32")
+        if errors:
+            raise RuntimeError("Invalid agent runtime configuration:\n- " + "\n- ".join(errors))
 
     def validate_mlops_runtime(self, *, scope: str | None = None) -> None:
         selected = scope or self.mlops_monitoring_scope

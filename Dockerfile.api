@@ -9,7 +9,7 @@ COPY configs ./configs
 COPY docs ./docs
 COPY src ./src
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir ".[activity]"
+    && python -m pip install --no-cache-dir ".[activity,agent]"
 
 EXPOSE 8000
 CMD ["uvicorn", "peoplepulse.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

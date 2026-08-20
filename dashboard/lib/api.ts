@@ -102,3 +102,34 @@ export async function getJson<T>(path: string): Promise<T> {
   }
   return response.json() as Promise<T>;
 }
+
+export type AgentResponse = {
+  answer: string;
+  blocked: boolean;
+  sources: string[];
+  tool_calls: string[];
+  model: string;
+  scope: "aggregate" | "synthetic_demo";
+  thread_id: string;
+};
+
+export type AgentHealth = {
+  status: string;
+  base_url: string;
+  configured_model?: string;
+  models?: string[];
+  error?: string;
+};
+
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${apiBase()}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload?.detail ?? `${response.status} ${response.statusText}`);
+  }
+  return payload as T;
+}

@@ -9,6 +9,9 @@ import Section from "@/components/Section";
 import {
   apiBase,
   getJson,
+  postJson,
+  type AgentHealth,
+  type AgentResponse,
   type AttritionMetrics,
   type NlpModel,
   type Overview,
@@ -208,6 +211,12 @@ export default function DashboardPage() {
   const [docFile, setDocFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<string>("");
+  const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
+  const [agentScope, setAgentScope] = useState<"aggregate" | "synthetic_demo">("aggregate");
+  const [agentThreadId, setAgentThreadId] = useState(() => `web-${Date.now()}`);
+  const [agentInput, setAgentInput] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentMessages, setAgentMessages] = useState<Array<{ role: "user" | "assistant"; content: string; meta?: string }>>([]);
 
   const load = useCallback(async () => {
     try {
@@ -224,6 +233,7 @@ export default function DashboardPage() {
       setAttrition(attritionData);
       setNlp(nlpData.models);
       setShap(shapData);
+      try { setAgentHealth(await getJson<AgentHealth>("/api/v1/agent/health")); } catch { setAgentHealth(null); }
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -252,6 +262,29 @@ export default function DashboardPage() {
   const attr = attrition?.privacy_safe ?? {};
   const selectedNlp = nlp[0];
   const shapOption = useMemo(() => shapChart(shap), [shap]);
+
+  async function askAgent(event: FormEvent) {
+    event.preventDefault();
+    const question = agentInput.trim();
+    if (!question || agentBusy) return;
+    setAgentInput("");
+    setAgentMessages((rows) => [...rows, { role: "user", content: question }]);
+    setAgentBusy(true);
+    try {
+      const result = await postJson<AgentResponse>("/api/v1/agent/chat", {
+        message: question,
+        scope: agentScope,
+        thread_id: agentThreadId,
+      });
+      setAgentThreadId(result.thread_id);
+      const meta = [result.model, ...result.sources].filter(Boolean).join(" · ");
+      setAgentMessages((rows) => [...rows, { role: "assistant", content: result.answer, meta }]);
+    } catch (reason) {
+      setAgentMessages((rows) => [...rows, { role: "assistant", content: reason instanceof Error ? reason.message : String(reason), meta: "agent error" }]);
+    } finally {
+      setAgentBusy(false);
+    }
+  }
 
   async function uploadReports(event: FormEvent) {
     event.preventDefault();
@@ -284,6 +317,7 @@ export default function DashboardPage() {
         <div className="brand-sub">Privacy-aware workforce intelligence<br />portfolio system</div>
         <nav className="nav">
           <a href="#overview">Executive Overview</a>
+          <a href="#analyst">AI Analyst Agent</a>
           <a href="#realtime">Real-time Slack Signal</a>
           <a href="#reports">Monthly Reports</a>
           <a href="#retention">Retention Evaluation</a>
@@ -298,7 +332,7 @@ export default function DashboardPage() {
       <main className="main">
         <header className="topbar">
           <div>
-            <div className="eyebrow">STEP 7 · PRODUCTIZATION</div>
+            <div className="eyebrow">STEP 9 · AGENTIC ANALYTICS</div>
             <h1>Workforce intelligence,<br />without raw surveillance.</h1>
             <p>Slack의 파생 NLP 신호, 월말 3종 보고서, synthetic retention ML 평가와 설명가능성을 하나의 운영형 대시보드로 연결합니다.</p>
           </div>
@@ -306,6 +340,7 @@ export default function DashboardPage() {
             <span className={`badge ${connected ? "badge-live" : ""}`}><span className="dot" />SSE {connected ? "connected" : "reconnecting"}</span>
             <span className="badge">FastAPI + Next.js 16.3</span>
             <span className="badge">Local / self-hosted</span>
+            <span className={`badge ${agentHealth?.status === "ok" ? "badge-live" : ""}`}>Ollama {agentHealth?.status ?? "checking"}</span>
           </div>
         </header>
 
@@ -322,7 +357,34 @@ export default function DashboardPage() {
           <div className="notice">개인별 attrition probability는 이 Executive 화면에 노출하지 않습니다. 모델 성능은 synthetic portfolio experiment 결과이며 실제 직원 성능을 의미하지 않습니다.</div>
         </Section>
 
-        <Section id="realtime" eyebrow="02 · Streaming" title="Real-time Slack Signal" description="Socket Mode → Redis Streams → CUDA Transformer → PostgreSQL 결과를 SSE로 브라우저에 push합니다." aside={<span className="badge badge-live">{currentLive?.model_name ?? "NLP model"} · {currentLive?.model_device ?? "—"}</span>}>
+
+        <Section id="analyst" eyebrow="02 · Agentic AI" title="PeoplePulse AI Analyst" description="Ollama 로컬 LLM이 LangGraph read-only tools를 호출해 Feature Store, MLflow, Drift, NLP/ML 평가를 자연어로 설명합니다." aside={<span className="badge">{agentHealth?.configured_model ?? "qwen3:8b"}</span>}>
+          <div className="grid-2">
+            <div className="panel">
+              <div className="panel-title">Analyst chat <span className="panel-subtitle">no arbitrary SQL · read-only tools</span></div>
+              <div className="chat-log">
+                {agentMessages.length ? agentMessages.map((row, index) => <div className={`chat-message ${row.role}`} key={`${row.role}-${index}`}><div className="chat-role">{row.role === "user" ? "You" : "PeoplePulse Analyst"}</div><div className="chat-content">{row.content}</div>{row.meta ? <div className="chat-meta">{row.meta}</div> : null}</div>) : <div className="notice">예: “최근 Slack work strain 추세와 drift 상태를 같이 설명해줘”, “NLP 모델과 retention 모델 성능을 비교해줘”</div>}
+              </div>
+              <form className="agent-form" onSubmit={askAgent}>
+                <select className="field" value={agentScope} onChange={(e) => setAgentScope(e.target.value as "aggregate" | "synthetic_demo")}>
+                  <option value="aggregate">aggregate · production-safe</option>
+                  <option value="synthetic_demo">synthetic_demo · portfolio only</option>
+                </select>
+                <input className="field" value={agentInput} onChange={(e) => setAgentInput(e.target.value)} placeholder="자연어로 분석을 요청하세요" maxLength={4000} />
+                <button className="primary-button" disabled={agentBusy}>{agentBusy ? "Analyzing..." : "Ask Analyst"}</button>
+              </form>
+            </div>
+            <div className="panel">
+              <div className="panel-title">Agent safety contract <span className="panel-subtitle">deterministic guardrails</span></div>
+              <div className="rank-list">
+                {["Feature Store fixed-query tools only — arbitrary SQL 없음", "실제 운영은 부서/코호트 aggregate만 허용", "직원 단위 조회는 synthetic_demo의 demo-* 키만 허용", "Slack 원문·검색어 원문·문서명 원문 도구 없음", "해고·징계·승진·보상 의사결정 추천 차단", "수치 답변은 tool result에 근거하고 source를 반환"].map((item, index) => <div className="rank-row" key={item}><div className="rank-index">{index + 1}</div><div className="rank-feature">{item}</div></div>)}
+              </div>
+              <div className="notice">Ollama status: {agentHealth?.status ?? "unknown"}. Docker API는 Windows host의 Ollama에 `host.docker.internal:11434`로 연결합니다.</div>
+            </div>
+          </div>
+        </Section>
+
+        <Section id="realtime" eyebrow="03 · Streaming" title="Real-time Slack Signal" description="Socket Mode → Redis Streams → CUDA Transformer → PostgreSQL 결과를 SSE로 브라우저에 push합니다." aside={<span className="badge badge-live">{currentLive?.model_name ?? "NLP model"} · {currentLive?.model_device ?? "—"}</span>}>
           <div className="grid-2">
             <div className="panel">
               <div className="panel-title">최근 60분 신호 추세 <span className="panel-subtitle">원문 메시지 미표시</span></div>
@@ -344,7 +406,7 @@ export default function DashboardPage() {
           </div>
         </Section>
 
-        <Section id="reports" eyebrow="03 · Batch ingestion" title="Monthly Report Upload" description="실제 3개 보고서 형식을 한 번에 업로드합니다. Backend가 헤더 signature로 종류를 자동 판별하고 privacy policy를 적용합니다." aside={<span className="badge">xls / xlsx</span>}>
+        <Section id="reports" eyebrow="04 · Batch ingestion" title="Monthly Report Upload" description="실제 3개 보고서 형식을 한 번에 업로드합니다. Backend가 헤더 signature로 종류를 자동 판별하고 privacy policy를 적용합니다." aside={<span className="badge">xls / xlsx</span>}>
           <div className="grid-2">
             <div className="panel">
               <form onSubmit={uploadReports} className="upload-grid">
@@ -370,7 +432,7 @@ export default function DashboardPage() {
           </div>
         </Section>
 
-        <Section id="retention" eyebrow="04 · Synthetic ML" title="Synthetic Retention Model Evaluation" description="90-day synthetic target, purged temporal split, probability calibration, intent-proxy ablation 결과를 표시합니다." aside={<span className="badge">SYNTHETIC DEMO ONLY</span>}>
+        <Section id="retention" eyebrow="05 · Synthetic ML" title="Synthetic Retention Model Evaluation" description="90-day synthetic target, purged temporal split, probability calibration, intent-proxy ablation 결과를 표시합니다." aside={<span className="badge">SYNTHETIC DEMO ONLY</span>}>
           <div className="grid-5">
             <MetricCard label="Selected model" value={attrition?.selected_model?.replaceAll("_", " ") ?? "—"} detail="validation Average Precision" accent />
             <MetricCard label="Average Precision" value={num(attr.average_precision, 4)} detail="privacy_safe temporal test" />
@@ -390,13 +452,13 @@ export default function DashboardPage() {
           </div>
         </Section>
 
-        <Section id="shap" eyebrow="05 · Explainability" title="SHAP Global Importance" description="선택된 synthetic attrition model의 global feature importance를 보여줍니다. 실제 개인 인사결정 설명으로 사용하지 않습니다.">
+        <Section id="shap" eyebrow="06 · Explainability" title="SHAP Global Importance" description="선택된 synthetic attrition model의 global feature importance를 보여줍니다. 실제 개인 인사결정 설명으로 사용하지 않습니다.">
           <div className="panel">
             {shapOption ? <EChart option={shapOption} height={420} /> : <div><div className="panel-title">Reference feature ranking <span className="panel-subtitle">SHAP magnitude artifact not found</span></div><div className="rank-list">{(shap?.features ?? []).map((row, index) => <div className="rank-row" key={row.feature}><div className="rank-index">{row.rank ?? index + 1}</div><div className="rank-feature">{row.feature}</div></div>)}</div><div className="notice">`artifacts/ml/step6/privacy_safe/shap/shap_feature_importance.csv`를 생성하면 실제 mean |SHAP| bar chart로 자동 전환됩니다.</div></div>}
           </div>
         </Section>
 
-        <Section id="performance" eyebrow="06 · Model observability" title="Model Performance" description="NLP 후보 성능과 latency, synthetic attrition model의 ranking/calibration을 분리해서 확인합니다.">
+        <Section id="performance" eyebrow="07 · Model observability" title="Model Performance" description="NLP 후보 성능과 latency, synthetic attrition model의 ranking/calibration을 분리해서 확인합니다.">
           <div className="grid-2">
             <div className="panel"><div className="panel-title">Korean NLP candidates <span className="panel-subtitle">Macro-F1</span></div>{nlp.length ? <EChart option={nlpChart(nlp)} height={300} /> : <div className="notice">NLP comparison artifact not found.</div>}</div>
             <div className="panel">
@@ -412,7 +474,7 @@ export default function DashboardPage() {
           </div>
         </Section>
 
-        <div className="footer">PeoplePulse AI · STEP 7 · portfolio-only employee-level attrition model · production analytics remains department/cohort scoped.</div>
+        <div className="footer">PeoplePulse AI · STEP 9 · local Ollama + LangGraph · portfolio-only employee-level attrition model · production analytics remains department/cohort scoped.</div>
       </main>
     </div>
   );

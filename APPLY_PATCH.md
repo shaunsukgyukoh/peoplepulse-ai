@@ -815,3 +815,81 @@ Then resume the complete stack:
 ```powershell
 .\scripts\run_step8_mlops.ps1 -Scope synthetic_demo
 ```
+
+# PeoplePulse AI STEP 9 — Local Ollama + LangGraph Analyst Agent
+
+Merge this patch into the existing project root. Do not overwrite the real `.env` with `.env.example`.
+
+## Install
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[activity,agent,dev]"
+.\scripts\setup_step9_ollama.ps1
+python scripts/check_step9_agent.py
+pytest tests/test_step9_agent_policy.py -q
+```
+
+## Run
+
+```powershell
+.\scripts\run_step9_agent.ps1 -Scope aggregate
+```
+
+Dashboard:
+
+```text
+http://localhost:3000/#analyst
+```
+
+## Core privacy contract
+
+Production uses only `aggregate` cohort analytics. The LLM has no arbitrary SQL tool and no tool that can fetch raw Slack messages, raw search text, or raw document names. Employee-level tools are synthetic-demo-only and require `demo-*` keys.
+
+# PeoplePulse AI STEP 9.1 — Windows PowerShell UTF-8 JSON Fix
+
+The FastAPI endpoint is valid. The smoke test failed before Ollama/LangGraph because
+Windows PowerShell can encode a JSON string body using its default request encoding when
+`charset` is not specified. The request contains Korean text, so FastAPI cannot parse the
+resulting body as UTF-8 JSON.
+
+This patch changes the smoke test to:
+
+1. serialize JSON with `ConvertTo-Json -Compress`
+2. convert the JSON explicitly to UTF-8 bytes
+3. send `Content-Type: application/json; charset=utf-8`
+4. print the server response body on HTTP errors
+
+## Apply
+
+Merge this patch into the project root, replacing:
+
+```text
+scripts/smoke_test_step9_agent.ps1
+```
+
+Then run:
+
+```powershell
+Invoke-RestMethod http://localhost:8000/api/v1/agent/health
+.\scripts\smoke_test_step9_agent.ps1
+```
+
+If you want to test the endpoint manually:
+
+```powershell
+$payload = @{
+    message = "최근 Slack 파생 신호를 요약해줘."
+    scope = "aggregate"
+    thread_id = "manual-test-001"
+} | ConvertTo-Json -Compress
+
+$utf8 = [System.Text.Encoding]::UTF8.GetBytes($payload)
+
+Invoke-RestMethod `
+    -Method POST `
+    -Uri "http://localhost:8000/api/v1/agent/chat" `
+    -ContentType "application/json; charset=utf-8" `
+    -Body $utf8 `
+    -TimeoutSec 120
+```

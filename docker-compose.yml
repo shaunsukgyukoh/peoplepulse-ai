@@ -118,7 +118,7 @@ services:
       - peoplepulse-net
 
   api:
-    profiles: ["activity", "dashboard", "mlops"]
+    profiles: ["activity", "dashboard", "mlops", "agent"]
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -149,8 +149,16 @@ services:
       MLOPS_MONITORING_ARTIFACT_ROOT: /artifacts/monitoring
       MLOPS_MONITORING_SCOPE: ${MLOPS_MONITORING_SCOPE:-synthetic_demo}
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      AGENT_OLLAMA_BASE_URL: ${AGENT_OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+      AGENT_OLLAMA_MODEL: ${AGENT_OLLAMA_MODEL:-qwen3:8b}
+      AGENT_TEMPERATURE: ${AGENT_TEMPERATURE:-0}
+      AGENT_NUM_CTX: ${AGENT_NUM_CTX:-16384}
+      AGENT_RECURSION_LIMIT: ${AGENT_RECURSION_LIMIT:-12}
+      AGENT_DEFAULT_SCOPE: ${AGENT_DEFAULT_SCOPE:-aggregate}
     volumes:
       - ./artifacts:/artifacts:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${API_PORT:-8000}:8000"
     depends_on:
@@ -160,7 +168,7 @@ services:
       - peoplepulse-net
 
   dashboard:
-    profiles: ["dashboard"]
+    profiles: ["dashboard", "agent"]
     build:
       context: ./dashboard
       dockerfile: Dockerfile
@@ -227,6 +235,12 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       MLFLOW_TRACKING_URI: http://mlflow:5000
+      AGENT_OLLAMA_BASE_URL: ${AGENT_OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+      AGENT_OLLAMA_MODEL: ${AGENT_OLLAMA_MODEL:-qwen3:8b}
+      AGENT_TEMPERATURE: ${AGENT_TEMPERATURE:-0}
+      AGENT_NUM_CTX: ${AGENT_NUM_CTX:-16384}
+      AGENT_RECURSION_LIMIT: ${AGENT_RECURSION_LIMIT:-12}
+      AGENT_DEFAULT_SCOPE: ${AGENT_DEFAULT_SCOPE:-aggregate}
       MLFLOW_MONITORING_EXPERIMENT: ${MLFLOW_MONITORING_EXPERIMENT:-PeoplePulse-Monitoring-Step8}
       MLOPS_MONITORING_SCOPE: ${MLOPS_MONITORING_SCOPE:-synthetic_demo}
       MLOPS_MONITORING_INTERVAL_SECONDS: ${MLOPS_MONITORING_INTERVAL_SECONDS:-3600}

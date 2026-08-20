@@ -116,3 +116,13 @@ th { color:var(--muted); font-weight:650; }
   .grid-5,.grid-4,.grid-3,.grid-2,.signal-grid { grid-template-columns: 1fr; }
   .upload-grid { grid-template-columns:1fr; }
 }
+
+.chat-log { display:grid; gap:10px; min-height:260px; max-height:480px; overflow:auto; padding:4px; }
+.chat-message { padding:12px 13px; border-radius:12px; border:1px solid var(--border); background:rgba(255,255,255,.025); }
+.chat-message.user { margin-left:12%; background:rgba(138,185,255,.07); border-color:rgba(138,185,255,.18); }
+.chat-message.assistant { margin-right:8%; background:rgba(101,230,180,.055); border-color:rgba(101,230,180,.18); }
+.chat-role { color:var(--accent); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+.chat-content { margin-top:6px; white-space:pre-wrap; line-height:1.65; font-size:13px; color:var(--text); }
+.chat-meta { margin-top:8px; color:var(--muted); font-size:10px; word-break:break-word; }
+.agent-form { display:grid; grid-template-columns:190px 1fr auto; gap:9px; margin-top:12px; }
+@media (max-width: 900px) { .agent-form { grid-template-columns:1fr; } .chat-message.user,.chat-message.assistant { margin:0; } }
