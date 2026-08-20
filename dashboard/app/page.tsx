@@ -4,56 +4,45 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import type { EChartsOption } from "echarts";
 
 import EChart from "@/components/EChart";
-import MetricCard from "@/components/MetricCard";
-import Section from "@/components/Section";
 import {
   apiBase,
   getJson,
-  postJson,
-  type AgentHealth,
-  type AgentResponse,
-  type AttritionMetrics,
-  type NlpModel,
+  patchJson,
+  type EmployeeRow,
+  type EmployeesResponse,
   type Overview,
-  type ShapResult,
   type SlackLive,
   type SlackTrendPoint,
 } from "@/lib/api";
 
-const SIGNAL_ORDER = [
-  "satisfied",
-  "neutral",
-  "frustrated",
-  "angry",
-  "dissatisfied",
-  "overloaded",
-  "conflict",
-  "disengaged",
-];
-
 const SIGNAL_LABEL: Record<string, string> = {
-  satisfied: "만족",
-  neutral: "중립",
-  frustrated: "답답함",
-  angry: "분노",
-  dissatisfied: "불만",
-  overloaded: "과부하",
-  conflict: "갈등",
-  disengaged: "몰입 저하",
+  satisfied: "긍정적 업무 표현",
+  neutral: "중립적 표현",
+  frustrated: "업무 답답함 표현",
+  angry: "강한 부정 표현",
+  dissatisfied: "업무 불만 표현",
+  overloaded: "과부하 표현",
+  conflict: "갈등 표현",
+  disengaged: "몰입 저하 표현",
 };
 
-const pct = (value: unknown, digits = 1) =>
-  typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(digits)}%` : "—";
-const num = (value: unknown, digits = 2) =>
-  typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "—";
-const compact = (value: unknown) =>
-  typeof value === "number" && Number.isFinite(value) ? new Intl.NumberFormat("ko-KR", { notation: "compact" }).format(value) : "—";
+const SELF_REPORT_LABEL: Record<string, string> = {
+  good: "좋음",
+  okay: "보통",
+  needs_support: "지원 필요",
+  prefer_not_to_say: "응답 안 함",
+  not_reported: "미입력",
+};
+
+function pct(value: number | undefined | null): string {
+  return typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "—";
+}
 
 function signalChart(points: SlackTrendPoint[]): EChartsOption {
   return {
     backgroundColor: "transparent",
     tooltip: { trigger: "axis", valueFormatter: (value) => `${(Number(value) * 100).toFixed(1)}%` },
-    legend: { data: ["work strain", "satisfied", "overloaded"], textStyle: { color: "#9bb5ad" } },
+    legend: { data: ["업무 긴장 신호", "긍정 표현", "과부하 표현"], textStyle: { color: "#9bb5ad" } },
     grid: { left: 42, right: 22, top: 42, bottom: 30 },
     xAxis: {
       type: "category",
@@ -70,125 +59,28 @@ function signalChart(points: SlackTrendPoint[]): EChartsOption {
       splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
     },
     series: [
-      {
-        name: "work strain",
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        data: points.map((p) => p.work_strain),
-        lineStyle: { width: 2.5, color: "#f5c76b" },
-        areaStyle: { color: "rgba(245,199,107,.06)" },
-      },
-      {
-        name: "satisfied",
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        data: points.map((p) => p.satisfied),
-        lineStyle: { width: 2, color: "#65e6b4" },
-      },
-      {
-        name: "overloaded",
-        type: "line",
-        smooth: true,
-        showSymbol: false,
-        data: points.map((p) => p.overloaded),
-        lineStyle: { width: 2, color: "#ff8e8e" },
-      },
+      { name: "업무 긴장 신호", type: "line", smooth: true, showSymbol: false, data: points.map((p) => p.work_strain) },
+      { name: "긍정 표현", type: "line", smooth: true, showSymbol: false, data: points.map((p) => p.satisfied) },
+      { name: "과부하 표현", type: "line", smooth: true, showSymbol: false, data: points.map((p) => p.overloaded) },
     ],
   };
 }
 
-function nlpChart(models: NlpModel[]): EChartsOption {
-  const rows = [...models].reverse();
+function selfReportChart(summary: EmployeesResponse | null): EChartsOption {
+  const rows = summary?.summary.self_report ?? {};
   return {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    grid: { left: 155, right: 24, top: 10, bottom: 24 },
-    xAxis: {
-      type: "value",
-      min: 0,
-      max: 1,
-      axisLabel: { color: "#78958c", formatter: (value: number) => value.toFixed(1) },
-      splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
-    },
-    yAxis: {
-      type: "category",
-      data: rows.map((m) => m.model.replace("beomi/", "").replace("klue/", "")),
-      axisLabel: { color: "#9bb5ad", width: 140, overflow: "truncate" },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
+    tooltip: { trigger: "item" },
+    legend: { bottom: 0, textStyle: { color: "#9bb5ad" } },
     series: [
       {
-        type: "bar",
-        data: rows.map((m) => m.macro_f1),
-        barWidth: 13,
-        itemStyle: { color: "#65e6b4", borderRadius: [0, 7, 7, 0] },
-      },
-    ],
-  };
-}
-
-function featureSetChart(metrics: AttritionMetrics | null): EChartsOption {
-  const rows = metrics?.feature_sets ?? [];
-  return {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    legend: { data: ["Average Precision", "Recall@Top10%"], textStyle: { color: "#9bb5ad" } },
-    grid: { left: 55, right: 18, top: 44, bottom: 36 },
-    xAxis: {
-      type: "category",
-      data: rows.map((r) => String(r.feature_set)),
-      axisLabel: { color: "#9bb5ad" },
-      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
-    },
-    yAxis: {
-      type: "value",
-      min: 0,
-      max: 0.35,
-      axisLabel: { color: "#78958c" },
-      splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
-    },
-    series: [
-      {
-        name: "Average Precision",
-        type: "bar",
-        data: rows.map((r) => Number(r.average_precision ?? 0)),
-        itemStyle: { color: "#65e6b4", borderRadius: [5, 5, 0, 0] },
-      },
-      {
-        name: "Recall@Top10%",
-        type: "bar",
-        data: rows.map((r) => Number(r.recall_at_top_10pct ?? 0)),
-        itemStyle: { color: "#8ab9ff", borderRadius: [5, 5, 0, 0] },
-      },
-    ],
-  };
-}
-
-function shapChart(shap: ShapResult | null): EChartsOption | null {
-  const rows = (shap?.features ?? []).filter((row) => typeof row.mean_abs_shap === "number");
-  if (!rows.length) return null;
-  const ordered = [...rows].reverse();
-  return {
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    grid: { left: 185, right: 20, top: 10, bottom: 25 },
-    xAxis: {
-      type: "value",
-      axisLabel: { color: "#78958c" },
-      splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
-    },
-    yAxis: {
-      type: "category",
-      data: ordered.map((row) => row.feature),
-      axisLabel: { color: "#9bb5ad", width: 175, overflow: "truncate" },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    series: [
-      {
-        type: "bar",
-        data: ordered.map((row) => row.mean_abs_shap),
-        itemStyle: { color: "#93f3cf", borderRadius: [0, 6, 6, 0] },
+        type: "pie",
+        radius: ["42%", "68%"],
+        center: ["50%", "43%"],
+        label: { color: "#eef8f4", formatter: "{b}\n{c}명" },
+        data: ["good", "okay", "needs_support", "prefer_not_to_say", "not_reported"].map((key) => ({
+          name: SELF_REPORT_LABEL[key],
+          value: Number(rows[key] ?? 0),
+        })),
       },
     ],
   };
@@ -196,44 +88,38 @@ function shapChart(shap: ShapResult | null): EChartsOption | null {
 
 export default function DashboardPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
+  const [employeesData, setEmployeesData] = useState<EmployeesResponse | null>(null);
   const [live, setLive] = useState<SlackLive | null>(null);
   const [trend, setTrend] = useState<SlackTrendPoint[]>([]);
-  const [attrition, setAttrition] = useState<AttritionMetrics | null>(null);
-  const [nlp, setNlp] = useState<NlpModel[]>([]);
-  const [shap, setShap] = useState<ShapResult | null>(null);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [reportMonth, setReportMonth] = useState("2026-07");
+  const [query, setQuery] = useState("");
+  const [department, setDepartment] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [sortBy, setSortBy] = useState("starred");
   const [adminToken, setAdminToken] = useState("");
+  const [savingStar, setSavingStar] = useState<string | null>(null);
+
+  const [reportMonth, setReportMonth] = useState("2026-07");
   const [jobFile, setJobFile] = useState<File | null>(null);
   const [searchFile, setSearchFile] = useState<File | null>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [uploadResult, setUploadResult] = useState<string>("");
-  const [agentHealth, setAgentHealth] = useState<AgentHealth | null>(null);
-  const [agentScope, setAgentScope] = useState<"aggregate" | "synthetic_demo">("aggregate");
-  const [agentThreadId, setAgentThreadId] = useState(() => `web-${Date.now()}`);
-  const [agentInput, setAgentInput] = useState("");
-  const [agentBusy, setAgentBusy] = useState(false);
-  const [agentMessages, setAgentMessages] = useState<Array<{ role: "user" | "assistant"; content: string; meta?: string }>>([]);
+  const [uploadResult, setUploadResult] = useState("");
 
   const load = useCallback(async () => {
     try {
-      const [overviewData, trendData, attritionData, nlpData, shapData] = await Promise.all([
+      const [overviewData, employeeRows, trendData] = await Promise.all([
         getJson<Overview>("/api/v1/dashboard/overview"),
+        getJson<EmployeesResponse>("/api/v1/dashboard/employees"),
         getJson<{ points: SlackTrendPoint[] }>("/api/v1/dashboard/slack/trend?minutes=60"),
-        getJson<AttritionMetrics>("/api/v1/dashboard/model/attrition"),
-        getJson<{ models: NlpModel[] }>("/api/v1/dashboard/model/nlp"),
-        getJson<ShapResult>("/api/v1/dashboard/model/shap"),
       ]);
       setOverview(overviewData);
+      setEmployeesData(employeeRows);
       setLive(overviewData.slack);
       setTrend(trendData.points);
-      setAttrition(attritionData);
-      setNlp(nlpData.models);
-      setShap(shapData);
-      try { setAgentHealth(await getJson<AgentHealth>("/api/v1/agent/health")); } catch { setAgentHealth(null); }
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -258,31 +144,44 @@ export default function DashboardPage() {
     return () => source.close();
   }, []);
 
-  const currentLive = live ?? overview?.slack;
-  const attr = attrition?.privacy_safe ?? {};
-  const selectedNlp = nlp[0];
-  const shapOption = useMemo(() => shapChart(shap), [shap]);
+  const departments = useMemo(
+    () => Array.from(new Set((employeesData?.employees ?? []).map((row) => row.department))).sort(),
+    [employeesData],
+  );
 
-  async function askAgent(event: FormEvent) {
-    event.preventDefault();
-    const question = agentInput.trim();
-    if (!question || agentBusy) return;
-    setAgentInput("");
-    setAgentMessages((rows) => [...rows, { role: "user", content: question }]);
-    setAgentBusy(true);
+  const filteredEmployees = useMemo(() => {
+    const rows = [...(employeesData?.employees ?? [])].filter((row) => {
+      const q = query.trim().toLowerCase();
+      const matchesQuery = !q || [row.employee_name, row.department, row.job_title ?? ""].some((value) => value.toLowerCase().includes(q));
+      const matchesDepartment = department === "all" || row.department === department;
+      const rowStatus = row.self_report_status ?? "not_reported";
+      const matchesStatus = status === "all" || rowStatus === status;
+      const matchesStar = !starredOnly || row.is_key_staff;
+      return matchesQuery && matchesDepartment && matchesStatus && matchesStar;
+    });
+
+    rows.sort((a, b) => {
+      if (sortBy === "name") return a.employee_name.localeCompare(b.employee_name, "ko");
+      if (sortBy === "department") return a.department.localeCompare(b.department, "ko") || a.employee_name.localeCompare(b.employee_name, "ko");
+      if (sortBy === "status") return (a.self_report_status ?? "zz").localeCompare(b.self_report_status ?? "zz") || a.employee_name.localeCompare(b.employee_name, "ko");
+      return Number(b.is_key_staff) - Number(a.is_key_staff) || a.employee_name.localeCompare(b.employee_name, "ko");
+    });
+    return rows;
+  }, [employeesData, query, department, status, starredOnly, sortBy]);
+
+  async function toggleKeyStaff(row: EmployeeRow) {
+    if (!adminToken) {
+      setError("핵심인력 별표를 변경하려면 관리자 토큰을 입력하세요.");
+      return;
+    }
+    setSavingStar(row.employee_id_hash);
     try {
-      const result = await postJson<AgentResponse>("/api/v1/agent/chat", {
-        message: question,
-        scope: agentScope,
-        thread_id: agentThreadId,
-      });
-      setAgentThreadId(result.thread_id);
-      const meta = [result.model, ...result.sources].filter(Boolean).join(" · ");
-      setAgentMessages((rows) => [...rows, { role: "assistant", content: result.answer, meta }]);
+      await patchJson(`/api/v1/dashboard/employees/${row.employee_id_hash}/key-staff`, { is_key_staff: !row.is_key_staff }, adminToken);
+      await load();
     } catch (reason) {
-      setAgentMessages((rows) => [...rows, { role: "assistant", content: reason instanceof Error ? reason.message : String(reason), meta: "agent error" }]);
+      setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setAgentBusy(false);
+      setSavingStar(null);
     }
   }
 
@@ -310,171 +209,125 @@ export default function DashboardPage() {
     }
   }
 
+  const workforce = employeesData?.summary ?? overview?.workforce;
+  const currentLive = live ?? overview?.slack;
+  const needsSupport = workforce?.self_report?.needs_support ?? 0;
+
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><div className="brand-mark">P</div><div>PeoplePulse AI</div></div>
-        <div className="brand-sub">Privacy-aware workforce intelligence<br />portfolio system</div>
+        <div className="brand"><div className="brand-mark">P</div><div>PeoplePulse</div></div>
+        <div className="brand-sub">HR workforce support dashboard</div>
         <nav className="nav">
-          <a href="#overview">Executive Overview</a>
-          <a href="#analyst">AI Analyst Agent</a>
-          <a href="#realtime">Real-time Slack Signal</a>
-          <a href="#reports">Monthly Reports</a>
-          <a href="#retention">Retention Evaluation</a>
-          <a href="#shap">SHAP</a>
-          <a href="#performance">Model Performance</a>
+          <a href="#overview">운영 요약</a>
+          <a href="#employees">직원 현황</a>
+          <a href="#signals">조직 업무 신호</a>
+          <a href="#reports">월말 데이터 업데이트</a>
         </nav>
         <div className="sidebar-note">
-          <strong>Responsible AI boundary</strong><br />실제 운영 화면은 부서/코호트 분석용입니다. 직원 단위 퇴사 예측은 synthetic demo에서만 허용합니다.
+          <strong>운영 원칙</strong><br />직원별 상태는 자발적 self-report만 표시합니다. Slack NLP는 조직 수준 업무 커뮤니케이션 추세로만 사용하며 심리·정신건강 진단이나 인사 의사결정에 사용하지 않습니다.
         </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
           <div>
-            <div className="eyebrow">STEP 9 · AGENTIC ANALYTICS</div>
-            <h1>Workforce intelligence,<br />without raw surveillance.</h1>
-            <p>Slack의 파생 NLP 신호, 월말 3종 보고서, synthetic retention ML 평가와 설명가능성을 하나의 운영형 대시보드로 연결합니다.</p>
+            <div className="eyebrow">PRODUCTION HR OPERATIONS</div>
+            <h1>직원 지원에 필요한 정보만,<br />한 화면에서.</h1>
+            <p>실명 직원 디렉터리, 자발적 상태 공유, 수동 핵심인력 표시, 조직 수준 업무 커뮤니케이션 신호를 제공합니다. 모델 성능·SHAP·Synthetic 평가 정보는 운영 화면에서 제외했습니다.</p>
           </div>
           <div className="status-cluster">
-            <span className={`badge ${connected ? "badge-live" : ""}`}><span className="dot" />SSE {connected ? "connected" : "reconnecting"}</span>
-            <span className="badge">FastAPI + Next.js 16.3</span>
-            <span className="badge">Local / self-hosted</span>
-            <span className={`badge ${agentHealth?.status === "ok" ? "badge-live" : ""}`}>Ollama {agentHealth?.status ?? "checking"}</span>
+            <span className={`badge ${connected ? "badge-live" : ""}`}><span className="dot" />{connected ? "Live" : "Reconnecting"}</span>
+            <span className="badge">Production main</span>
           </div>
         </header>
 
-        {error ? <div className="notice error">API connection: {error}. `http://localhost:8000/health`와 Docker API 상태를 확인하세요.</div> : null}
+        {error && <div className="notice error">{error}</div>}
 
-        <Section id="overview" eyebrow="01 · Executive" title="Executive Overview" description="개인 원문이나 실제 개인 퇴사확률 없이 현재 파이프라인 상태와 조직 수준 신호를 요약합니다.">
+        <section id="overview" className="section-shell">
+          <div className="section-head"><div><div className="eyebrow">Overview</div><h2>운영 요약</h2><p>HR 운영에 필요한 현재 상태만 보여줍니다.</p></div></div>
           <div className="grid-5">
-            <MetricCard label="Slack signals · 15m" value={compact(currentLive?.message_count)} detail={`latest ${currentLive?.last_message_at ? new Date(currentLive.last_message_at).toLocaleTimeString("ko-KR") : "—"}`} accent />
-            <MetricCard label="Work strain · 15m" value={pct(currentLive?.work_strain)} detail="6개 업무 긴장 신호의 파생 평균" />
-            <MetricCard label="NLP Macro-F1" value={num(selectedNlp?.macro_f1, 3)} detail={`${selectedNlp?.model ?? "—"} · ${selectedNlp?.device ?? "—"}`} />
-            <MetricCard label="Retention AP" value={num(attr.average_precision, 3)} detail="Synthetic privacy-safe temporal test" />
-            <MetricCard label="Latest report" value={overview?.latest_report?.report_month?.slice(0, 7) ?? "—"} detail={overview?.latest_report ? `${overview.latest_report.privacy_mode} · ${overview.latest_report.input_rows} rows` : "No batch yet"} />
+            <div className="metric-card metric-card-accent"><div className="metric-label">재직 직원</div><div className="metric-value">{workforce?.employee_count ?? 0}</div><div className="metric-detail">Employee Directory 기준</div></div>
+            <div className="metric-card"><div className="metric-label">핵심인력</div><div className="metric-value">★ {workforce?.key_staff_count ?? 0}</div><div className="metric-detail">관리자가 수동 지정</div></div>
+            <div className="metric-card"><div className="metric-label">Self-report 지원 필요</div><div className="metric-value">{needsSupport}</div><div className="metric-detail">자발적 상태 공유 기준</div></div>
+            <div className="metric-card"><div className="metric-label">조직 업무 긴장 신호</div><div className="metric-value">{pct(currentLive?.work_strain)}</div><div className="metric-detail">최근 15분 조직 전체 집계</div></div>
+            <div className="metric-card"><div className="metric-label">최근 월말 데이터</div><div className="metric-value">{overview?.latest_report?.report_month ?? "—"}</div><div className="metric-detail">3종 보고서 처리 현황</div></div>
           </div>
-          <div className="notice">개인별 attrition probability는 이 Executive 화면에 노출하지 않습니다. 모델 성능은 synthetic portfolio experiment 결과이며 실제 직원 성능을 의미하지 않습니다.</div>
-        </Section>
+        </section>
 
-
-        <Section id="analyst" eyebrow="02 · Agentic AI" title="PeoplePulse AI Analyst" description="Ollama 로컬 LLM이 LangGraph read-only tools를 호출해 Feature Store, MLflow, Drift, NLP/ML 평가를 자연어로 설명합니다." aside={<span className="badge">{agentHealth?.configured_model ?? "qwen3:8b"}</span>}>
-          <div className="grid-2">
-            <div className="panel">
-              <div className="panel-title">Analyst chat <span className="panel-subtitle">no arbitrary SQL · read-only tools</span></div>
-              <div className="chat-log">
-                {agentMessages.length ? agentMessages.map((row, index) => <div className={`chat-message ${row.role}`} key={`${row.role}-${index}`}><div className="chat-role">{row.role === "user" ? "You" : "PeoplePulse Analyst"}</div><div className="chat-content">{row.content}</div>{row.meta ? <div className="chat-meta">{row.meta}</div> : null}</div>) : <div className="notice">예: “최근 Slack work strain 추세와 drift 상태를 같이 설명해줘”, “NLP 모델과 retention 모델 성능을 비교해줘”</div>}
-              </div>
-              <form className="agent-form" onSubmit={askAgent}>
-                <select className="field" value={agentScope} onChange={(e) => setAgentScope(e.target.value as "aggregate" | "synthetic_demo")}>
-                  <option value="aggregate">aggregate · production-safe</option>
-                  <option value="synthetic_demo">synthetic_demo · portfolio only</option>
-                </select>
-                <input className="field" value={agentInput} onChange={(e) => setAgentInput(e.target.value)} placeholder="자연어로 분석을 요청하세요" maxLength={4000} />
-                <button className="primary-button" disabled={agentBusy}>{agentBusy ? "Analyzing..." : "Ask Analyst"}</button>
-              </form>
-            </div>
-            <div className="panel">
-              <div className="panel-title">Agent safety contract <span className="panel-subtitle">deterministic guardrails</span></div>
-              <div className="rank-list">
-                {["Feature Store fixed-query tools only — arbitrary SQL 없음", "실제 운영은 부서/코호트 aggregate만 허용", "직원 단위 조회는 synthetic_demo의 demo-* 키만 허용", "Slack 원문·검색어 원문·문서명 원문 도구 없음", "해고·징계·승진·보상 의사결정 추천 차단", "수치 답변은 tool result에 근거하고 source를 반환"].map((item, index) => <div className="rank-row" key={item}><div className="rank-index">{index + 1}</div><div className="rank-feature">{item}</div></div>)}
-              </div>
-              <div className="notice">Ollama status: {agentHealth?.status ?? "unknown"}. Docker API는 Windows host의 Ollama에 `host.docker.internal:11434`로 연결합니다.</div>
-            </div>
+        <section id="employees" className="section-shell">
+          <div className="section-head">
+            <div><div className="eyebrow">Employee Directory</div><h2>직원 현황</h2><p>실명·부서·직책과 자발적 self-report 상태를 확인합니다. 별표는 업무 중요도 판단을 위한 수동 메타데이터이며 AI 신호로 자동 지정되지 않습니다.</p></div>
           </div>
-        </Section>
 
-        <Section id="realtime" eyebrow="03 · Streaming" title="Real-time Slack Signal" description="Socket Mode → Redis Streams → CUDA Transformer → PostgreSQL 결과를 SSE로 브라우저에 push합니다." aside={<span className="badge badge-live">{currentLive?.model_name ?? "NLP model"} · {currentLive?.model_device ?? "—"}</span>}>
-          <div className="grid-2">
-            <div className="panel">
-              <div className="panel-title">최근 60분 신호 추세 <span className="panel-subtitle">원문 메시지 미표시</span></div>
-              {trend.length ? <EChart option={signalChart(trend)} height={330} /> : <div className="notice">아직 최근 60분 NLP signal이 없습니다. Slack 테스트 메시지를 보내면 실시간으로 표시됩니다.</div>}
-            </div>
-            <div className="panel">
-              <div className="panel-title">현재 15분 signal snapshot <span className="panel-subtitle">SSE live</span></div>
-              <div className="signal-grid">
-                {SIGNAL_ORDER.map((signal) => {
-                  const value = currentLive?.signals?.[signal] ?? 0;
-                  return <div className="signal" key={signal}><div className="signal-name">{SIGNAL_LABEL[signal]}</div><div className="signal-score">{pct(value, 0)}</div><div className="progress"><span style={{ width: `${Math.max(0, Math.min(100, value * 100))}%` }} /></div></div>;
+          <div className="grid-4 employee-filters">
+            <input className="field" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="이름 / 부서 / 직책 검색" />
+            <select className="field" value={department} onChange={(e) => setDepartment(e.target.value)}>
+              <option value="all">전체 부서</option>{departments.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+            <select className="field" value={status} onChange={(e) => setStatus(e.target.value)}>
+              <option value="all">전체 상태</option>
+              <option value="good">좋음</option><option value="okay">보통</option><option value="needs_support">지원 필요</option><option value="prefer_not_to_say">응답 안 함</option><option value="not_reported">미입력</option>
+            </select>
+            <select className="field" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+              <option value="starred">핵심인력 우선</option><option value="name">이름순</option><option value="department">부서순</option><option value="status">상태순</option>
+            </select>
+          </div>
+          <div className="employee-toolbar">
+            <label className="star-filter"><input type="checkbox" checked={starredOnly} onChange={(e) => setStarredOnly(e.target.checked)} /> 핵심인력만 보기</label>
+            <input className="field admin-token-field" type="password" value={adminToken} onChange={(e) => setAdminToken(e.target.value)} placeholder="관리자 토큰 — 별표/업로드 변경용" />
+            <span className="badge">{filteredEmployees.length}명 표시</span>
+          </div>
+
+          <div className="table-wrap employee-table-wrap">
+            <table>
+              <thead><tr><th>핵심</th><th>이름</th><th>부서</th><th>직책</th><th>Self-report</th><th>최근 상태 공유</th></tr></thead>
+              <tbody>
+                {filteredEmployees.map((row) => {
+                  const state = row.self_report_status ?? "not_reported";
+                  return (
+                    <tr key={row.employee_id_hash}>
+                      <td><button className={`star-button ${row.is_key_staff ? "active" : ""}`} disabled={savingStar === row.employee_id_hash} onClick={() => toggleKeyStaff(row)} aria-label={`${row.employee_name} 핵심인력 표시 변경`}>{row.is_key_staff ? "★" : "☆"}</button></td>
+                      <td><strong>{row.employee_name}</strong></td>
+                      <td>{row.department}</td>
+                      <td>{row.job_title ?? "—"}</td>
+                      <td><span className={`state-badge state-${state}`}>{SELF_REPORT_LABEL[state]}</span></td>
+                      <td>{row.self_report_updated_at ? new Date(row.self_report_updated_at).toLocaleString("ko-KR") : "—"}</td>
+                    </tr>
+                  );
                 })}
-              </div>
-              <div className="grid-2" style={{ marginTop: 12 }}>
-                <MetricCard label="Mean inference" value={`${num(currentLive?.avg_inference_ms, 1)} ms`} detail="최근 15분" />
-                <MetricCard label="Analyzed messages" value={compact(currentLive?.message_count)} detail="최근 15분" />
-              </div>
-            </div>
+              </tbody>
+            </table>
           </div>
-        </Section>
+          {!filteredEmployees.length && <div className="notice">조건에 맞는 직원이 없습니다. Employee Directory가 비어 있다면 `scripts/load_employee_directory.py`로 먼저 등록하세요.</div>}
+        </section>
 
-        <Section id="reports" eyebrow="04 · Batch ingestion" title="Monthly Report Upload" description="실제 3개 보고서 형식을 한 번에 업로드합니다. Backend가 헤더 signature로 종류를 자동 판별하고 privacy policy를 적용합니다." aside={<span className="badge">xls / xlsx</span>}>
+        <section id="signals" className="section-shell">
+          <div className="section-head"><div><div className="eyebrow">Work Communication Signals</div><h2>조직 업무 신호</h2><p>Slack 원문은 저장하지 않으며 개인별 점수는 표시하지 않습니다. 이 지표는 조직 수준의 업무 커뮤니케이션 추세를 파악해 지원·업무환경 개선 논의를 시작하기 위한 참고값입니다.</p></div></div>
           <div className="grid-2">
-            <div className="panel">
-              <form onSubmit={uploadReports} className="upload-grid">
-                <label htmlFor="month">Report month</label><input id="month" className="field" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} pattern="[0-9]{4}-[0-9]{2}" required />
-                <label htmlFor="token">Admin token</label><input id="token" className="field" type="password" value={adminToken} onChange={(e) => setAdminToken(e.target.value)} autoComplete="off" required />
-                <label htmlFor="job">취업사이트 접속내역</label><input id="job" className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setJobFile(e.target.files?.[0] ?? null)} required />
-                <label htmlFor="search">웹 검색 내역</label><input id="search" className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setSearchFile(e.target.files?.[0] ?? null)} required />
-                <label htmlFor="doc">문서활용 내역</label><input id="doc" className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} required />
-                <div /><button className="primary-button" disabled={uploading}>{uploading ? "Processing..." : "Validate & process 3 reports"}</button>
-              </form>
-              <div className="notice">실제 데이터 기본 모드는 `aggregate`: 직원별 원문·검색어·문서명은 저장하지 않고 최소 코호트 크기 정책을 적용합니다.</div>
-            </div>
-            <div className="panel">
-              <div className="panel-title">Latest batch <span className="panel-subtitle">PostgreSQL audit</span></div>
-              <div className="grid-2">
-                <MetricCard label="Report month" value={overview?.latest_report?.report_month?.slice(0, 7) ?? "—"} />
-                <MetricCard label="Input rows" value={compact(overview?.latest_report?.input_rows)} />
-                <MetricCard label="Privacy excluded" value={compact(overview?.latest_report?.privacy_excluded_rows)} />
-                <MetricCard label="Privacy mode" value={overview?.latest_report?.privacy_mode ?? "—"} />
-              </div>
-              {uploadResult ? <pre className="upload-result" style={{ marginTop: 12 }}>{uploadResult}</pre> : null}
-            </div>
+            <div className="panel"><div className="panel-title">최근 60분 추세<span className="panel-subtitle">aggregate only</span></div><EChart option={signalChart(trend)} height={330} /></div>
+            <div className="panel"><div className="panel-title">자발적 Self-report 분포<span className="panel-subtitle">employee-provided</span></div><EChart option={selfReportChart(employeesData)} height={330} /></div>
           </div>
-        </Section>
+          <div className="signal-grid">
+            {Object.entries(currentLive?.signals ?? {}).map(([key, value]) => <div className="signal" key={key}><div className="signal-name">{SIGNAL_LABEL[key] ?? key}</div><div className="signal-score">{pct(value)}</div><div className="progress"><span style={{ width: `${Math.max(0, Math.min(100, value * 100))}%` }} /></div></div>)}
+          </div>
+        </section>
 
-        <Section id="retention" eyebrow="05 · Synthetic ML" title="Synthetic Retention Model Evaluation" description="90-day synthetic target, purged temporal split, probability calibration, intent-proxy ablation 결과를 표시합니다." aside={<span className="badge">SYNTHETIC DEMO ONLY</span>}>
-          <div className="grid-5">
-            <MetricCard label="Selected model" value={attrition?.selected_model?.replaceAll("_", " ") ?? "—"} detail="validation Average Precision" accent />
-            <MetricCard label="Average Precision" value={num(attr.average_precision, 4)} detail="privacy_safe temporal test" />
-            <MetricCard label="ROC-AUC" value={num(attr.roc_auc, 4)} />
-            <MetricCard label="Recall@Top10%" value={pct(attr.recall_at_top_10pct)} />
-            <MetricCard label="Brier score" value={num(attr.brier_score, 4)} detail="calibrated probability" />
-          </div>
-          <div className="grid-2" style={{ marginTop: 14 }}>
-            <div className="panel"><div className="panel-title">Intent-proxy ablation <span className="panel-subtitle">privacy_safe vs synthetic_full</span></div><EChart option={featureSetChart(attrition)} height={300} /></div>
-            <div className="panel">
-              <div className="panel-title">Evaluation contract <span className="panel-subtitle">no random split</span></div>
-              <div className="rank-list">
-                {["90-day future attrition target", "Purged temporal train / validation / test", "Validation-only model selection", "Sigmoid probability calibration", "Untouched temporal test", "No real employee-level inference"].map((item, index) => <div className="rank-row" key={item}><div className="rank-index">{index + 1}</div><div className="rank-feature">{item}</div></div>)}
-              </div>
-              <div className="notice">Source: {attrition?.source ?? "—"}. Local STEP 6 artifacts가 있으면 우선 사용하고, 없으면 repository reference metrics로 fallback합니다.</div>
+        <section id="reports" className="section-shell">
+          <div className="section-head"><div><div className="eyebrow">Data Operations</div><h2>월말 데이터 업데이트</h2><p>관리자가 3종 보고서를 한 번에 업로드합니다. 운영 Dashboard에는 모델 성능/실험 지표를 노출하지 않습니다.</p></div></div>
+          <form onSubmit={uploadReports}>
+            <div className="upload-grid">
+              <label>Report month</label><input className="field" type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} />
+              <label>취업사이트 접속내역</label><input className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setJobFile(e.target.files?.[0] ?? null)} />
+              <label>웹 검색 내역</label><input className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setSearchFile(e.target.files?.[0] ?? null)} />
+              <label>문서활용 내역</label><input className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} />
             </div>
-          </div>
-        </Section>
+            <div style={{ marginTop: 14 }}><button className="primary-button" disabled={!adminToken || !jobFile || !searchFile || !docFile || uploading}>{uploading ? "처리 중..." : "3개 보고서 검증 및 처리"}</button></div>
+          </form>
+          {uploadResult && <pre className="upload-result" style={{ marginTop: 14 }}>{uploadResult}</pre>}
+        </section>
 
-        <Section id="shap" eyebrow="06 · Explainability" title="SHAP Global Importance" description="선택된 synthetic attrition model의 global feature importance를 보여줍니다. 실제 개인 인사결정 설명으로 사용하지 않습니다.">
-          <div className="panel">
-            {shapOption ? <EChart option={shapOption} height={420} /> : <div><div className="panel-title">Reference feature ranking <span className="panel-subtitle">SHAP magnitude artifact not found</span></div><div className="rank-list">{(shap?.features ?? []).map((row, index) => <div className="rank-row" key={row.feature}><div className="rank-index">{row.rank ?? index + 1}</div><div className="rank-feature">{row.feature}</div></div>)}</div><div className="notice">`artifacts/ml/step6/privacy_safe/shap/shap_feature_importance.csv`를 생성하면 실제 mean |SHAP| bar chart로 자동 전환됩니다.</div></div>}
-          </div>
-        </Section>
-
-        <Section id="performance" eyebrow="07 · Model observability" title="Model Performance" description="NLP 후보 성능과 latency, synthetic attrition model의 ranking/calibration을 분리해서 확인합니다.">
-          <div className="grid-2">
-            <div className="panel"><div className="panel-title">Korean NLP candidates <span className="panel-subtitle">Macro-F1</span></div>{nlp.length ? <EChart option={nlpChart(nlp)} height={300} /> : <div className="notice">NLP comparison artifact not found.</div>}</div>
-            <div className="panel">
-              <div className="panel-title">NLP benchmark detail <span className="panel-subtitle">validation-tuned thresholds</span></div>
-              <div className="table-wrap"><table><thead><tr><th>Model</th><th>Macro-F1</th><th>Precision</th><th>Recall</th><th>P95 ms</th></tr></thead><tbody>{nlp.map((model) => <tr key={model.model}><td>{model.model}</td><td>{num(model.macro_f1, 3)}</td><td>{num(model.macro_precision, 3)}</td><td>{num(model.macro_recall, 3)}</td><td>{num(model.latency_ms_p95, 2)}</td></tr>)}</tbody></table></div>
-            </div>
-          </div>
-          <div className="grid-4" style={{ marginTop: 14 }}>
-            <MetricCard label="Attrition AP" value={num(attr.average_precision, 4)} />
-            <MetricCard label="PR-AUC" value={num(attr.pr_auc_trapezoid, 4)} />
-            <MetricCard label="ECE · 10 bin" value={num(attr.ece_10bin, 4)} />
-            <MetricCard label="Test positive rate" value={pct(attr.positive_rate)} />
-          </div>
-        </Section>
-
-        <div className="footer">PeoplePulse AI · STEP 9 · local Ollama + LangGraph · portfolio-only employee-level attrition model · production analytics remains department/cohort scoped.</div>
+        <div className="footer">PeoplePulse production main · 개인별 Slack NLP/정신건강 추론/퇴사 위험 순위는 운영 Dashboard에 제공하지 않습니다. 핵심인력 별표는 관리자의 독립적인 수동 지정 값입니다.</div>
       </main>
     </div>
   );
