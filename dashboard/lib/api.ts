@@ -10,9 +10,50 @@ export type SlackLive = {
   last_message_at: string | null;
 };
 
+export type SlackTrendPoint = {
+  bucket: string;
+  message_count: number;
+  satisfied: number;
+  frustrated: number;
+  overloaded: number;
+  disengaged: number;
+  work_strain: number;
+  avg_inference_ms: number;
+};
+
+export type EmployeeRow = {
+  employee_id_hash: string;
+  employee_name: string;
+  department: string;
+  job_title: string | null;
+  is_key_staff: boolean;
+  self_report_status: "good" | "okay" | "needs_support" | "prefer_not_to_say" | null;
+  self_report_updated_at: string | null;
+  last_activity_at: string | null;
+  message_count_7d: number;
+};
+
+export type WorkforceSummary = {
+  employee_count: number;
+  key_staff_count: number;
+  departments: Record<string, number>;
+  self_report: Record<string, number>;
+};
+
+export type EmployeesResponse = {
+  employees: EmployeeRow[];
+  summary: WorkforceSummary;
+  signal_policy: {
+    individual_slack_nlp_visible: boolean;
+    individual_state_source: string;
+    key_staff_source: string;
+  };
+};
+
 export type Overview = {
   generated_at: string;
   slack: SlackLive;
+  workforce: WorkforceSummary;
   latest_report: null | {
     batch_id: string;
     report_month: string;
@@ -31,58 +72,7 @@ export type Overview = {
     synthetic_employee_rows: number;
     latest_month: string | null;
   };
-  nlp_model: Record<string, number | string | null>;
-  attrition_model: Record<string, number | string | null>;
-  privacy: {
-    production_scope: string;
-    employee_level_attrition_scope: string;
-    raw_slack_text_persisted: boolean;
-    raw_activity_text_persisted: boolean;
-  };
-};
-
-export type SlackTrendPoint = {
-  bucket: string;
-  message_count: number;
-  satisfied: number;
-  frustrated: number;
-  overloaded: number;
-  disengaged: number;
-  work_strain: number;
-  avg_inference_ms: number;
-};
-
-export type AttritionMetrics = {
-  source: string;
-  scope: string;
-  feature_sets: Array<Record<string, number | string>>;
-  selected_model: string | null;
-  privacy_safe: Record<string, number>;
-  privacy_safe_raw: Record<string, number>;
-  split: Record<string, unknown>;
-  calibration: Record<string, unknown>;
-};
-
-export type NlpModel = {
-  model: string;
-  family: string;
-  evaluation?: string;
-  macro_f1: number;
-  micro_f1: number;
-  macro_precision: number;
-  macro_recall: number;
-  latency_ms_mean: number;
-  latency_ms_p95: number;
-  device: string;
-};
-
-export type ShapResult = {
-  source: string;
-  features: Array<{
-    feature: string;
-    mean_abs_shap: number | null;
-    rank?: number;
-  }>;
+  privacy: Record<string, string | boolean>;
 };
 
 export function apiBase(): string {
@@ -97,39 +87,20 @@ export function apiBase(): string {
 
 export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiBase()}${path}`, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
-  }
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json() as Promise<T>;
 }
 
-export type AgentResponse = {
-  answer: string;
-  blocked: boolean;
-  sources: string[];
-  tool_calls: string[];
-  model: string;
-  scope: "aggregate" | "synthetic_demo";
-  thread_id: string;
-};
-
-export type AgentHealth = {
-  status: string;
-  base_url: string;
-  configured_model?: string;
-  models?: string[];
-  error?: string;
-};
-
-export async function postJson<T>(path: string, body: unknown): Promise<T> {
+export async function patchJson<T>(path: string, body: unknown, adminToken: string): Promise<T> {
   const response = await fetch(`${apiBase()}${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Admin-Token": adminToken,
+    },
     body: JSON.stringify(body),
   });
   const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload?.detail ?? `${response.status} ${response.statusText}`);
-  }
+  if (!response.ok) throw new Error(payload?.detail ?? `${response.status} ${response.statusText}`);
   return payload as T;
 }
