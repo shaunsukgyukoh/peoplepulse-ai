@@ -1,0 +1,13 @@
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /opt/peoplepulse
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir "mlflow==3.15.1" "psycopg[binary]>=3.2,<4" "prometheus-flask-exporter==0.23.2" \
+    && python -c "import mlflow, prometheus_flask_exporter; print('[OK] MLflow Prometheus exporter dependency installed')"
+COPY infra/mlflow/start_mlflow.py ./start_mlflow.py
+
+EXPOSE 5000
+CMD ["python", "/opt/peoplepulse/start_mlflow.py"]

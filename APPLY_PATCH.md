@@ -544,3 +544,274 @@ Then open:
 ```text
 http://localhost:3000
 ```
+
+
+# PeoplePulse AI STEP 8 — MLOps / drift monitoring
+
+Merge this patch into the existing `peoplepulse-ai` project root. The patch also carries the STEP 7.1 Next.js `public/` Docker fix so it can be applied safely on top of the latest project state.
+
+## 1. Keep existing secrets
+
+Do **not** replace your real `.env` with `.env.example`. Keep the existing `EMPLOYEE_HASH_KEY`, Slack tokens, PostgreSQL password, and activity admin token.
+
+Add or review these STEP 8 values in `.env`:
+
+```env
+MLFLOW_PORT=5000
+MLFLOW_POSTGRES_DB=peoplepulse_mlflow
+MLFLOW_WORKERS=2
+MLFLOW_SERVER_ALLOWED_HOSTS=localhost:*,127.0.0.1:*,mlflow:5000,peoplepulse-mlflow:5000
+MLFLOW_SERVER_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:5000,http://127.0.0.1:5000
+MLFLOW_MONITORING_EXPERIMENT=PeoplePulse-Monitoring-Step8
+
+MLOPS_MONITORING_SCOPE=synthetic_demo
+MLOPS_MONITORING_INTERVAL_SECONDS=3600
+MLOPS_REFERENCE_MONTHS=6
+MLOPS_CURRENT_MONTHS=3
+MLOPS_DRIFT_SHARE_THRESHOLD=0.30
+MLOPS_FEATURE_SET=privacy_safe
+
+PROMETHEUS_PORT=9090
+PROMETHEUS_RETENTION=15d
+GRAFANA_PORT=3001
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=<change-this-local-password>
+```
+
+`synthetic_demo` is blocked when `APP_ENV=production`.
+
+## 2. Static preflight
+
+```powershell
+cd "C:\Users\a\Documents\Agentic-AI project\peoplepulse-ai"
+.\.venv\Scripts\Activate.ps1
+python scripts/check_step8_mlops.py
+```
+
+Expected:
+
+```text
+[OK] STEP 8 static preflight
+  mlflow=3.15.1
+  evidently=0.7.21
+  prometheus=3.13.2-lts
+  grafana=13.1.0
+  mlflow_security=allowed-hosts + cors (middleware enabled)
+  prometheus_labels=no employee/department/slack identifiers
+```
+
+## 3. Synthetic demo prerequisites
+
+For the full synthetic demo, STEP 6 should already have generated:
+
+```text
+data/synthetic/ml/step6_attrition_panel.csv
+```
+
+If it is missing:
+
+```powershell
+python scripts/generate_step6_synthetic_panel.py
+```
+
+If `artifacts/ml/step6/privacy_safe/test_predictions.csv` is missing, STEP 8 still creates data-drift reports; model-performance monitoring is shown as unavailable until STEP 6 training finishes successfully.
+
+## 4. Start STEP 8
+
+```powershell
+.\scripts\run_step8_mlops.ps1 -Scope synthetic_demo
+```
+
+The script performs fail-fast static validation, builds/starts the services, imports available STEP 3/6 history into MLflow, generates the initial Evidently snapshot, and starts the recurring monitoring worker.
+
+## 5. Verify services
+
+```powershell
+docker compose --profile mlops ps
+```
+
+Expected services include:
+
+```text
+peoplepulse-postgres
+peoplepulse-api
+peoplepulse-mlflow
+peoplepulse-monitoring-worker
+peoplepulse-prometheus
+peoplepulse-grafana
+```
+
+Open:
+
+```text
+http://localhost:5000                         MLflow
+http://localhost:9090                         Prometheus
+http://localhost:3001                         Grafana
+http://localhost:8000/metrics                 FastAPI Prometheus metrics
+http://localhost:8000/api/v1/monitoring/summary
+http://localhost:8000/api/v1/monitoring/evidently/latest
+```
+
+## 6. Production-safe aggregate mode
+
+```powershell
+.\scripts\run_step8_mlops.ps1 -Scope aggregate
+```
+
+This path reads only `features.department_monthly_fusion`. It does not perform employee-level model-performance monitoring. The default 6-month reference + 3-month current window needs at least 9 distinct months of aggregate history; until that history exists, use the synthetic demo for portfolio validation or reduce the window settings deliberately for a smoke test.
+
+## 7. Logs
+
+```powershell
+docker compose --profile mlops logs --tail=100 mlflow
+docker compose --profile mlops logs --tail=100 monitoring-worker
+docker compose --profile mlops logs --tail=100 prometheus
+docker compose --profile mlops logs --tail=100 grafana
+```
+
+## Privacy contract
+
+- Real/production: department/cohort drift only.
+- Synthetic demo: employee-level model monitoring allowed only on generated data.
+- Prometheus labels contain no employee, department, Slack, canonical employee, or HMAC identifiers.
+- Raw Slack message text is never included in STEP 8 monitoring artifacts.
+
+# PeoplePulse AI STEP 8.1 — MLflow startup fix
+
+This patch fixes an MLflow container that builds successfully but remains unhealthy
+during the first PostgreSQL-backed startup.
+
+## Changes
+
+- Bootstrap the dedicated `peoplepulse_mlflow` database.
+- Run `mlflow db upgrade <backend-uri>` exactly once before starting the server.
+- Default local MLflow workers from 2 -> 1 to avoid first-start migration races.
+- Explicitly enable artifact serving and `mlflow-artifacts:/` as the default root.
+- Probe `127.0.0.1:5000/health` instead of `localhost`.
+- Increase the first-start healthcheck grace period.
+- Print MLflow logs automatically if STEP 8 infrastructure startup fails.
+- Add `scripts/diagnose_step8_mlflow.ps1`.
+
+## Apply
+
+Merge this patch into the project root. Keep the user's existing `.env`; do not
+replace it with `.env.example`.
+
+For local development, set:
+
+```env
+MLFLOW_WORKERS=1
+```
+
+Then:
+
+```powershell
+docker compose --profile mlops rm -sf mlflow
+docker compose --profile mlops build --no-cache mlflow
+docker compose --profile mlops up -d postgres
+docker compose --profile mlops up -d mlflow
+docker compose --profile mlops ps -a
+docker compose --profile mlops logs --tail=200 mlflow
+```
+
+Expected log sequence:
+
+```text
+[MLflow bootstrap] database=peoplepulse_mlflow already exists
+[MLflow bootstrap] applying MLflow DB migrations
+...
+[MLflow bootstrap] DB migrations complete
+[MLflow bootstrap] starting tracking server workers=1 ...
+INFO: Application startup complete.
+INFO: Uvicorn running on http://0.0.0.0:5000
+```
+
+Health:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://localhost:5000/health
+```
+
+Expected body:
+
+```text
+OK
+```
+
+Then run the full stack:
+
+```powershell
+.\scripts\run_step8_mlops.ps1 -Scope synthetic_demo
+```
+
+If it still fails:
+
+```powershell
+.\scripts\diagnose_step8_mlflow.ps1
+```
+
+# PeoplePulse AI STEP 8.2 — MLflow Prometheus Exporter Dependency Fix
+
+The MLflow database bootstrap is already succeeding. The current crash is caused by
+`--expose-prometheus` importing `prometheus_flask_exporter`, which is an optional MLflow dependency.
+
+This patch:
+- installs `prometheus-flask-exporter==0.23.2` in `Dockerfile.mlflow`
+- performs a build-time import check so the image fails early if the exporter is absent
+- keeps STEP 8.1 DB migration/bootstrap and `127.0.0.1` healthcheck hardening
+- keeps the default local MLflow worker count at 1
+- adds `scripts/verify_step8_mlflow_image.ps1`
+- strengthens STEP 8 preflight
+
+## Important `.env` note
+
+Do NOT overwrite your real `.env`.
+
+If your `.env` still contains:
+
+```env
+MLFLOW_WORKERS=2
+```
+
+change it to:
+
+```env
+MLFLOW_WORKERS=1
+```
+
+for the local portfolio stack. `docker-compose.yml` defaults to 1, but `.env` overrides that default.
+
+## Apply and verify
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+
+python scripts/check_step8_mlops.py
+
+.\scripts\verify_step8_mlflow_image.ps1
+
+docker compose --profile mlops rm -sf mlflow
+
+docker compose --profile mlops up -d mlflow
+
+docker compose --profile mlops ps -a
+
+docker compose --profile mlops logs --tail=120 mlflow
+
+Invoke-WebRequest -UseBasicParsing http://localhost:5000/health
+
+curl.exe http://localhost:5000/metrics
+```
+
+Expected:
+
+```text
+peoplepulse-mlflow ... Up ... (healthy)
+StatusCode : 200
+```
+
+Then resume the complete stack:
+
+```powershell
+.\scripts\run_step8_mlops.ps1 -Scope synthetic_demo
+```

@@ -515,3 +515,22 @@ Start it with:
 ```
 
 Then open `http://localhost:3000`. Employee-level attrition content remains synthetic-demo-only; production-facing analytics remain department/cohort scoped.
+
+
+## STEP 8 — MLOps / Model & Data Drift Monitoring
+
+STEP 8 adds a fully self-hosted observability stack:
+
+- MLflow 3.15.1 tracking server with PostgreSQL metadata and a Docker artifact volume;
+- Evidently 0.7.21 batch data-drift reports;
+- Prometheus 3.13.2 LTS scraping FastAPI and MLflow metrics;
+- Grafana 13.1 provisioned dashboards;
+- recurring monitoring worker and Prometheus alert rules.
+
+Run:
+
+```powershell
+.\scripts\run_step8_mlops.ps1 -Scope synthetic_demo
+```
+
+Use `-Scope aggregate` for production-safe cohort drift. Employee-level model monitoring remains synthetic-demo-only. See `docs/step8-runbook.md`.

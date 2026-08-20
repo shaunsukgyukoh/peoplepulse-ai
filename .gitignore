@@ -48,3 +48,7 @@ artifacts/ml/**
 dashboard/node_modules/
 dashboard/.next/
 dashboard/.env*.local
+
+artifacts/monitoring/*
+!artifacts/monitoring/.gitkeep
+mlflow.db

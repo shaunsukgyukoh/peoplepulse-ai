@@ -1,0 +1,26 @@
+groups:
+  - name: peoplepulse-mlops
+    rules:
+      - alert: PeoplePulseAPIDown
+        expr: up{job="peoplepulse-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PeoplePulse API scrape target is down"
+
+      - alert: PeoplePulseHighDataDrift
+        expr: peoplepulse_data_drift_share > 0.30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PeoplePulse monitored feature drift exceeds 30%"
+
+      - alert: PeoplePulseMonitoringStale
+        expr: time() - peoplepulse_monitoring_last_success_timestamp_seconds > 7200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PeoplePulse monitoring snapshot is older than two hours"

@@ -118,7 +118,7 @@ services:
       - peoplepulse-net
 
   api:
-    profiles: ["activity", "dashboard"]
+    profiles: ["activity", "dashboard", "mlops"]
     build:
       context: .
       dockerfile: Dockerfile.api
@@ -146,6 +146,9 @@ services:
       DASHBOARD_SHAP_PATH: /artifacts/ml/step6/privacy_safe/shap/shap_feature_importance.csv
       DASHBOARD_STREAM_INTERVAL_SECONDS: ${DASHBOARD_STREAM_INTERVAL_SECONDS:-2}
       DASHBOARD_ALLOWED_ORIGINS: ${DASHBOARD_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      MLOPS_MONITORING_ARTIFACT_ROOT: /artifacts/monitoring
+      MLOPS_MONITORING_SCOPE: ${MLOPS_MONITORING_SCOPE:-synthetic_demo}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ./artifacts:/artifacts:ro
     ports:
@@ -174,8 +177,129 @@ services:
     networks:
       - peoplepulse-net
 
+
+  mlflow:
+    profiles: ["mlops"]
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: peoplepulse-mlflow
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-peoplepulse}
+      POSTGRES_USER: ${POSTGRES_USER:-peoplepulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      MLFLOW_POSTGRES_DB: ${MLFLOW_POSTGRES_DB:-peoplepulse_mlflow}
+      MLFLOW_WORKERS: ${MLFLOW_WORKERS:-1}
+      MLFLOW_SERVER_ALLOWED_HOSTS: ${MLFLOW_SERVER_ALLOWED_HOSTS:-localhost:*,127.0.0.1:*,mlflow:5000,peoplepulse-mlflow:5000}
+      MLFLOW_SERVER_CORS_ALLOWED_ORIGINS: ${MLFLOW_SERVER_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:5000,http://127.0.0.1:5000}
+    volumes:
+      - peoplepulse_mlflow_artifacts:/mlflow/artifacts
+      - peoplepulse_mlflow_prometheus:/mlflow/prometheus
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=5); assert r.status == 200"]
+      interval: 10s
+      timeout: 8s
+      retries: 30
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - peoplepulse-net
+
+  monitoring-worker:
+    profiles: ["mlops"]
+    build:
+      context: .
+      dockerfile: Dockerfile.monitoring
+    container_name: peoplepulse-monitoring-worker
+    restart: unless-stopped
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      POSTGRES_DB: ${POSTGRES_DB:-peoplepulse}
+      POSTGRES_USER: ${POSTGRES_USER:-peoplepulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local-only}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MLFLOW_MONITORING_EXPERIMENT: ${MLFLOW_MONITORING_EXPERIMENT:-PeoplePulse-Monitoring-Step8}
+      MLOPS_MONITORING_SCOPE: ${MLOPS_MONITORING_SCOPE:-synthetic_demo}
+      MLOPS_MONITORING_INTERVAL_SECONDS: ${MLOPS_MONITORING_INTERVAL_SECONDS:-3600}
+      MLOPS_REFERENCE_MONTHS: ${MLOPS_REFERENCE_MONTHS:-6}
+      MLOPS_CURRENT_MONTHS: ${MLOPS_CURRENT_MONTHS:-3}
+      MLOPS_DRIFT_SHARE_THRESHOLD: ${MLOPS_DRIFT_SHARE_THRESHOLD:-0.30}
+      MLOPS_FEATURE_SET: ${MLOPS_FEATURE_SET:-privacy_safe}
+      MLOPS_SYNTHETIC_PANEL_PATH: /data/synthetic/ml/step6_attrition_panel.csv
+      MLOPS_PREDICTIONS_PATH: /artifacts/ml/step6/privacy_safe/test_predictions.csv
+      MLOPS_MONITORING_ARTIFACT_ROOT: /artifacts/monitoring
+    volumes:
+      - ./data:/data:ro
+      - ./artifacts:/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    networks:
+      - peoplepulse-net
+
+  prometheus:
+    profiles: ["mlops"]
+    image: prom/prometheus:v3.13.2
+    container_name: peoplepulse-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --web.enable-lifecycle
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - peoplepulse_prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      api:
+        condition: service_started
+      mlflow:
+        condition: service_healthy
+    networks:
+      - peoplepulse-net
+
+  grafana:
+    profiles: ["mlops"]
+    image: grafana/grafana:13.1.0
+    container_name: peoplepulse-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-me-local-only}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - peoplepulse_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - peoplepulse-net
+
 volumes:
   peoplepulse_postgres_data:
+  peoplepulse_mlflow_artifacts:
+  peoplepulse_mlflow_prometheus:
+  peoplepulse_prometheus_data:
+  peoplepulse_grafana_data:
 
 networks:
   peoplepulse-net:

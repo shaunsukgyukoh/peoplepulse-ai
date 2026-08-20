@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -62,6 +63,27 @@ class Settings(BaseSettings):
     dashboard_stream_interval_seconds: float = 2.0
     dashboard_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
+
+    mlflow_tracking_uri: str = "http://localhost:5000"
+    mlflow_monitoring_experiment: str = "PeoplePulse-Monitoring-Step8"
+    mlops_monitoring_scope: str = "synthetic_demo"
+    mlops_monitoring_interval_seconds: int = 3600
+    mlops_reference_months: int = 6
+    mlops_current_months: int = 3
+    mlops_drift_share_threshold: float = 0.30
+    mlops_feature_set: str = "privacy_safe"
+    mlops_synthetic_panel_path: str = "data/synthetic/ml/step6_attrition_panel.csv"
+    mlops_predictions_path: str = "artifacts/ml/step6/privacy_safe/test_predictions.csv"
+    mlops_monitoring_artifact_root: str = "artifacts/monitoring"
+
+    @property
+    def mlops_monitoring_summary_path(self) -> str:
+        return str(Path(self.mlops_monitoring_artifact_root) / "latest_summary.json")
+
+    @property
+    def mlops_monitoring_latest_html_path(self) -> str:
+        return str(Path(self.mlops_monitoring_artifact_root) / "latest_evidently_data_drift.html")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -78,6 +100,25 @@ class Settings(BaseSettings):
             f"postgresql://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+
+    def validate_mlops_runtime(self, *, scope: str | None = None) -> None:
+        selected = scope or self.mlops_monitoring_scope
+        errors: list[str] = []
+        if selected not in {"aggregate", "synthetic_demo"}:
+            errors.append("MLOPS_MONITORING_SCOPE must be aggregate or synthetic_demo")
+        if selected == "synthetic_demo" and self.app_env == "production":
+            errors.append("synthetic_demo MLOps monitoring is blocked when APP_ENV=production")
+        if self.mlops_monitoring_interval_seconds < 60:
+            errors.append("MLOPS_MONITORING_INTERVAL_SECONDS must be >= 60")
+        if self.mlops_reference_months < 1 or self.mlops_current_months < 1:
+            errors.append("MLOPS reference/current windows must each be >= 1 month")
+        if not 0.0 < self.mlops_drift_share_threshold <= 1.0:
+            errors.append("MLOPS_DRIFT_SHARE_THRESHOLD must be in (0, 1]")
+        if self.mlops_feature_set not in {"privacy_safe", "synthetic_full"}:
+            errors.append("MLOPS_FEATURE_SET must be privacy_safe or synthetic_full")
+        if errors:
+            raise RuntimeError("Invalid MLOps runtime configuration:\n- " + "\n- ".join(errors))
 
     def validate_nlp_runtime(self) -> None:
         errors: list[str] = []
