@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./production.css";
 
 export const metadata: Metadata = {
-  title: "PeoplePulse AI Dashboard",
-  description: "Privacy-aware workforce intelligence portfolio dashboard",
+  title: "PeoplePulse HR Dashboard",
+  description: "Production workforce support dashboard for HR operations",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
