@@ -1,134 +1,119 @@
-# PeoplePulse AI
+# PeoplePulse AI, Portfolio Branch
 
-**Privacy-Aware Employee Retention Intelligence Platform**
-Realtime Korean workplace NLP · Feature Store · Temporal ML · Dashboard · MLOps · Local Agentic AI
+**Privacy-Aware Employee Retention Intelligence Platform, Full AI/ML Engineering Scope**
 
-> **Portfolio scope:** this repository demonstrates system design and ML/LLM engineering with synthetic data. It does not claim that the included attrition model is validated for real employment decisions.
+Slack 기반 업무 커뮤니케이션과 월간 운영 데이터를 분석하는 과정에서 개인정보와 인사 의사결정 위험을 최소화하면서, realtime NLP, feature engineering, temporal ML, MLOps, local Agent를 하나의 시스템으로 통합한 AI/Data engineering portfolio project입니다.
 
-![PeoplePulse AI architecture](docs/portfolio/architecture.svg)
+> Employee-level attrition modeling과 성능 수치는 synthetic portfolio data에만 적용됩니다. 실제 직원에 대한 채용, 해고, 승진, 보상, 징계 자동화 용도로 설계하지 않았습니다.
 
-## Why this project
+## 프로젝트 개요
 
-People analytics can easily become invasive: raw workplace messages, browsing records and opaque risk scores can expose employees or be misused in HR decisions. PeoplePulse AI explores a different architecture:
+| 항목 | 내용 |
+|---|---|
+| 문제 영역 | People Analytics, Privacy-aware AI, MLOps |
+| 데이터 흐름 | Slack realtime signal, 월간 report, synthetic ML |
+| 핵심 기술 | PyTorch, KLUE RoBERTa, Redis, PostgreSQL, FastAPI, Next.js |
+| ML/MLOps | scikit-learn, XGBoost, LightGBM, CatBoost, SHAP, MLflow, Evidently |
+| Agent | LangGraph, Ollama, allowlisted read-only tools |
+| 설계 원칙 | Data minimization, temporal leakage control, policy guard |
 
-- keep raw communication transient,
-- pseudonymize identifiers before durable analytics,
-- store derived workplace signals rather than Slack message text,
-- keep real-data analytics at department/cohort level,
-- use employee-level attrition modeling only on synthetic portfolio data,
-- evaluate models with temporal leakage controls and calibration,
-- monitor experiments/data drift/services,
-- expose analytics to a local LLM only through fixed read-only tools,
-- block individual real-employee risk, raw content, HR decisions and mental-health inference before the LLM.
+## 1. 문제 정의
 
-## Architecture
+조직 데이터를 활용해 업무 부담이나 이탈 위험을 분석하는 시스템은 기술적으로는 만들기 쉽지만, 잘못 설계하면 직원 감시 시스템이 될 수 있습니다.
 
-```text
-Slack ──> PII Mask/HMAC ──> Redis Streams ──> KLUE RoBERTa ──> Derived Signals ──┐
-                                                                                │
-3 Monthly Reports ──> Pandera/Privacy Filter ──> Monthly Features ──────────────┼─> PostgreSQL Feature Store
-                                                                                │
-Synthetic Data ─────────────────────────────────────────────────────────────────┘
-                                      │
-                                      ├─> Temporal Attrition ML ─> Calibration / SHAP
-                                      ├─> FastAPI ─> Next.js Dashboard / SSE
-                                      ├─> MLflow + Evidently + Prometheus/Grafana
-                                      └─> Policy Guard ─> LangGraph ─> Ollama ─> Read-only Tools
-```
+특히 다음 문제를 동시에 해결해야 했습니다.
 
-Detailed diagram and trust boundaries: [docs/portfolio/architecture.md](docs/portfolio/architecture.md)
+- Slack raw message를 장기간 저장할 경우 개인정보 노출 위험
+- 직원 단위 심리 상태를 추정할 경우 과도한 profiling 위험
+- 월간 activity data와 realtime communication signal의 identity 연결 문제
+- attrition dataset의 낮은 positive rate와 class imbalance
+- 시간 순서를 무시한 random split에서 발생하는 temporal leakage
+- 모델 결과와 실제 HR 의사결정의 경계
+- LLM Agent가 임의 SQL이나 raw employee data에 접근할 위험
+- model experiment, drift, API 상태를 별도 도구에서 관리해야 하는 운영 복잡성
 
-## What is implemented
+따라서 목표를 "이탈 가능성이 높은 직원을 찾는 모델"이 아니라 "privacy boundary를 시스템 구조 안에 포함한 people analytics platform"으로 정의했습니다.
 
-| STEP | Capability | Main technologies |
-|---|---|---|
-| 1 | Local infrastructure | Docker Compose, PostgreSQL, Redis |
-| 2 | Slack realtime ingestion | Slack Bolt, Events API, Socket Mode, Redis Streams |
-| 3 | Korean workplace-signal NLP | PyTorch, Transformers, KLUE RoBERTa, CUDA |
-| 4 | Actual-format 3-report ingestion | Pandera, pandas/calamine, FastAPI uploads |
-| 5 | Identity resolution + Feature Store | HMAC identity map, SQL/Python rolling features |
-| 6 | Synthetic attrition ML | scikit-learn, XGBoost, LightGBM, CatBoost, SHAP |
-| 7 | Product dashboard | FastAPI, Next.js, React, ECharts, SSE |
-| 8 | MLOps / drift | MLflow, Evidently, Prometheus, Grafana |
-| 9 | Local Analyst Agent | Ollama, qwen3:8b, LangGraph, allowlisted tools |
-| 10 | Evaluation / portfolio finalization | Agent eval harness, policy tests, one-command demo, docs |
+## 2. 해결 방안
 
-## Quick Start
+### Realtime Slack pipeline
 
-### Prerequisites
+Slack Events API와 Socket Mode로 message event를 받고 PII masking과 HMAC pseudonymization 후 Redis Streams로 전달합니다.
 
-- Windows + PowerShell
-- Docker Desktop
-- Python 3.11 virtual environment
-- Ollama
-- Optional/verified GPU path: NVIDIA RTX 4080 SUPER for local CUDA NLP
+raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 derived workplace signal만 저장하도록 설계했습니다.
 
-Install project dependencies appropriate for the full portfolio:
+### Monthly data pipeline
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[activity,nlp,ml,agent,dev]"
-```
+서로 다른 월간 report format을 parser가 자동 인식하고 Pandera validation과 privacy filtering을 거쳐 monthly feature로 변환합니다.
 
-Keep your existing CUDA-enabled PyTorch install if already verified.
+### Feature Store
 
-Configure `.env` from `.env.example`. **Never commit `.env`.**
+Slack과 monthly report의 identifier를 동일한 HMAC namespace로 연결하고 PostgreSQL에 rolling feature를 저장합니다.
 
-### One-command synthetic demo
+메시지가 많은 사람이 cohort 평균을 지배하지 않도록 employee-first aggregation 후 cohort aggregation을 수행했습니다.
 
-```powershell
-.\scripts\portfolio_up.ps1 -Scope synthetic_demo
-```
+### Temporal ML
 
-This applies migrations, seeds idempotent synthetic demo data, starts the product/MLOps stack, verifies Ollama connectivity, and prints the service URLs.
+7, 30, 90일 rolling feature와 trend delta를 만들고, 미래 target window와 purge gap을 포함한 temporal split을 적용했습니다.
 
-Optional live Agent evaluation:
+class imbalance 때문에 accuracy보다 Average Precision, PR-AUC, Recall@Top-K, calibration을 중심으로 평가했습니다.
 
-```powershell
-.\scripts\portfolio_up.ps1 -Scope synthetic_demo -RunEvaluation
-```
+### Responsible Agent
 
-Stop without deleting persistent volumes:
+LangGraph와 Ollama 기반 Analyst Agent에는 arbitrary SQL을 제공하지 않고 fixed read-only tool만 허용했습니다.
 
-```powershell
-.\scripts\portfolio_down.ps1
-```
+LLM 앞에 deterministic policy gate를 두어 individual real-employee risk, raw message, employment decision, mental-health inference 요청을 차단하도록 설계했습니다.
 
-More: [docs/portfolio/quickstart.md](docs/portfolio/quickstart.md)
+### MLOps
 
-## Demo
+MLflow experiment tracking, Evidently drift, Prometheus metrics, Grafana dashboard를 하나의 Docker Compose stack으로 구성했습니다.
 
-Recommended 7–10 minute flow:
+## 3. 이해관계자 관점과 협업 방식
 
-1. Executive dashboard overview
-2. Derived Slack NLP signals
-3. Three monthly synthetic report upload
-4. Temporal attrition model + calibration + SHAP
-5. MLflow / drift / Grafana
-6. Local LangGraph Analyst tool calling
-7. Privacy guard demonstration
-8. STEP 10 Agent evaluation scorecard
+개인 portfolio project로 진행했기 때문에 실제 HR 조직이나 직원 데이터를 이용한 공동 개발은 하지 않았습니다.
 
-Full script: [docs/portfolio/demo-scenario.md](docs/portfolio/demo-scenario.md)
+대신 시스템 요구사항을 다음 stakeholder 관점으로 분리했습니다.
 
-## Evaluation
+- HR 운영자, 조직 수준의 workload signal과 report 상태 필요
+- 직원, raw communication과 개인 민감정보 보호 필요
+- Data/ML engineer, 재현 가능한 feature와 model evaluation 필요
+- 운영자, drift와 service health monitoring 필요
+- AI Agent 사용자, 근거가 있는 read-only analytics만 필요
 
-### STEP 3 NLP reference benchmark — synthetic portfolio dataset
+이 stakeholder 간 요구가 충돌하는 지점을 architecture boundary로 명시했습니다.
 
-Validation-tuned thresholds, test split:
+## 4. 본인 기여
 
-| Model | Macro-F1 | Macro Precision | Macro Recall | P95 latency | Device |
-|---|---:|---:|---:|---:|---|
-| **KLUE RoBERTa-base** | **0.799** | 0.732 | 0.969 | 7.26 ms | CUDA |
-| TF-IDF + Logistic | 0.557 | 0.593 | 0.767 | **2.61 ms** | CPU |
-| KcELECTRA-base | 0.476 | 0.353 | 0.948 | 6.66 ms | CUDA |
-| KcELECTRA-small | 0.263 | 0.158 | 0.917 | 7.81 ms | CUDA |
+- Slack realtime ingestion과 Redis Streams pipeline 설계
+- PII masking과 HMAC pseudonymization 구현
+- KLUE RoBERTa 기반 Korean workplace multi-label NLP pipeline 구축
+- 실제 형식의 월간 report ingestion과 Pandera validation 구현
+- identity resolution과 PostgreSQL feature store 구축
+- 7, 30, 90일 rolling feature와 temporal target pipeline 구현
+- Logistic Regression, XGBoost, LightGBM, CatBoost 비교 실험
+- probability calibration과 SHAP explainability 적용
+- FastAPI backend, Next.js dashboard, SSE realtime view 구현
+- MLflow, Evidently, Prometheus, Grafana MLOps stack 구성
+- LangGraph, Ollama 기반 local analytics Agent와 tool policy 구현
+- deterministic privacy guard와 evaluation harness 구현
+- synthetic data와 real-data scope를 분리하는 repository/branch strategy 설계
 
-These scores are generated from the repository's synthetic workplace-message benchmark and are not production employee-model claims.
+## 5. 최종 결과와 성과
 
-### STEP 6 synthetic attrition reference
+### NLP benchmark, synthetic portfolio dataset
 
-`privacy_safe` selected Logistic Regression on the temporal test set:
+| Model | Macro-F1 | Macro Precision | Macro Recall | P95 latency |
+|---|---:|---:|---:|---:|
+| KLUE RoBERTa-base | **0.799** | 0.732 | 0.969 | 7.26 ms |
+| TF-IDF + Logistic | 0.557 | 0.593 | 0.767 | **2.61 ms** |
+| KcELECTRA-base | 0.476 | 0.353 | 0.948 | 6.66 ms |
+| KcELECTRA-small | 0.263 | 0.158 | 0.917 | 7.81 ms |
+
+KLUE RoBERTa-base가 synthetic benchmark에서 가장 높은 Macro-F1을 기록했습니다.
+
+### Synthetic attrition reference
+
+temporal test set에서 privacy-safe Logistic Regression을 기준으로 다음 결과를 얻었습니다.
 
 - Average Precision: **0.1238**
 - ROC-AUC: **0.6988**
@@ -136,155 +121,82 @@ These scores are generated from the repository's synthetic workplace-message ben
 - Calibrated Brier score: **0.0566**
 - Test positive rate: **5.76%**
 
-The synthetic panel contains 650 synthetic employees over 36 months. Employee-level model outputs are deliberately restricted to synthetic scope.
+synthetic panel은 650명의 synthetic employee와 36개월 시계열로 구성했습니다.
 
-### STEP 10 Agent evaluation
+### Agent evaluation infrastructure
 
-The Agent evaluation dataset contains **36 deterministic cases** covering single/multi-tool selection, source traces, synthetic queries, privacy attacks, raw-content requests, employment decisions and mental-health inference.
+- single-tool, multi-tool, source trace, privacy attack를 포함한 36개 deterministic evaluation case 구성
+- policy test가 기준을 만족하지 못하면 portfolio preflight가 실패하도록 검증 단계 구성
+- tool selection, citation, unsupported numeric claim, latency를 함께 평가하는 harness 구현
 
-Run policy tests without Ollama:
+## 6. 인사이트와 러닝
 
-```powershell
-python scripts/run_step10_policy_eval.py
-```
+### Responsible AI는 문서가 아니라 architecture constraint여야 합니다
 
-Run the live local Agent benchmark:
+"개인정보를 조심한다"는 원칙만 적는 것으로는 부족했습니다. raw message 비저장, pseudonymization, aggregate-only real-data analytics, read-only tool, policy gate처럼 시스템이 위험한 행동을 구조적으로 하기 어렵게 만드는 것이 중요했습니다.
 
-```powershell
-python scripts/run_step10_evaluation.py
-```
+### 불균형 문제에서는 accuracy가 핵심 metric이 아닙니다
 
-After reviewing the measured results, publish them intentionally:
+positive rate가 낮은 attrition 문제에서는 ROC-AUC만으로도 운영 성능을 오해할 수 있습니다. AP, Recall@Top-K, calibration을 함께 봐야 실제 screening 성능을 이해할 수 있었습니다.
 
-```powershell
-python scripts/run_step10_evaluation.py --publish
-```
+### ML model과 product decision은 분리해야 합니다
 
-Metrics:
+모델 output은 분석 신호일 뿐 인사 의사결정 자체가 아닙니다. 특히 employment domain에서는 model performance와 사용할 수 있는 decision scope를 별도로 정의해야 했습니다.
 
-- Tool exact-match accuracy and tool recall
-- Structured source/citation rate
-- Citation presence in answer text
-- Unsupported numeric-claim **hallucination proxy**
-- Deterministic privacy/policy accuracy
-- End-to-end p50 / p95 / p99 latency
-
-Methodology and limitations: [docs/portfolio/evaluation-methodology.md](docs/portfolio/evaluation-methodology.md)
-
-Consolidated evidence summary: [docs/portfolio/portfolio-evidence.md](docs/portfolio/portfolio-evidence.md)
-
-## Privacy & Responsible AI
-
-### Data minimization
-
-- Raw Slack messages are not durably stored by the analytics database.
-- Redis persistence is disabled for transient masked-message queues.
-- Slack/user/channel identifiers are HMAC-pseudonymized.
-- Raw URL paths/queries, search text and document names are not exposed to the Analyst Agent.
-- Sensitive categories are filtered before feature generation.
-
-### Production / synthetic separation
+## 7. Architecture
 
 ```text
-aggregate       -> real-data department/cohort analytics only
-synthetic_demo  -> portfolio employee-level feature/model demonstrations
+Slack
+ -> Mask/HMAC
+ -> Redis Streams
+ -> Korean NLP
+ -> Derived Signals
+                         -> PostgreSQL Feature Store
+Monthly Reports
+ -> Validation
+ -> Monthly Features
+                         -> Temporal ML
+                         -> FastAPI
+                         -> Next.js Dashboard
+                         -> MLflow/Evidently/Prometheus/Grafana
+                         -> Policy Guard
+                         -> LangGraph/Ollama
+                         -> Read-only Tools
 ```
 
-### Agent guardrails
+## 8. Branch Context
 
-The public chat API runs a deterministic policy gate before LangGraph/Ollama. It blocks:
+### `main`
 
-- individual real-employee risk lookup,
-- names / Slack IDs / employee IDs,
-- raw Slack/search/document content,
-- hiring, firing, discipline, promotion and compensation recommendations,
-- mental-health diagnosis/inference from workplace signals.
+Production-oriented HR operations view
 
-The LLM has **no arbitrary SQL tool**. It can use only fixed read-only analytics tools.
+- employee directory
+- voluntary self-report
+- manual key-staff marker
+- aggregate Slack work signals
+- monthly report operations
 
-## Model / Data Engineering Highlights
+### `portfolio`, current branch
 
-- Multi-label NLP instead of binary sentiment
-- Validation-only threshold tuning
-- Redis consumer groups + stale pending recovery
-- Same HMAC namespace strategy across Slack and monthly reports
-- Employee-first then cohort-second aggregation to avoid message-volume dominance
-- 7/30/90-day rolling windows and trend deltas
-- 90-day future target with purge gaps to reduce temporal leakage
-- Imbalance-aware AP / PR-AUC / Recall@Top-K evaluation
-- Separate probability calibration and SHAP explainability
-- Privacy-safe feature ablation
+Full AI/ML engineering demonstration
 
-## MLOps
+- NLP benchmark
+- synthetic attrition ML
+- SHAP
+- MLflow and drift monitoring
+- LangGraph Agent
+- evaluation harness
 
-- MLflow experiment tracking with PostgreSQL backend
-- Evidently reference/current drift reports
-- FastAPI and MLflow Prometheus metrics
-- Grafana provisioned dashboard
-- Drift / API / stale-monitoring alert rules
+[Open portfolio branch](https://github.com/shaunsukgyukoh/peoplepulse-ai/tree/portfolio)
 
-Local services:
+## 9. 기술 스택
 
-| Service | URL |
-|---|---|
-| Dashboard | `http://localhost:3000` |
-| FastAPI docs | `http://localhost:8000/docs` |
-| MLflow | `http://localhost:5000` |
-| Prometheus | `http://localhost:9090` |
-| Grafana | `http://localhost:3001` |
-| Ollama | `http://localhost:11434` |
+`Python, PyTorch, Transformers, KLUE RoBERTa, Redis, PostgreSQL, Pandera, scikit-learn, XGBoost, LightGBM, CatBoost, SHAP, FastAPI, Next.js, React, MLflow, Evidently, Prometheus, Grafana, LangGraph, Ollama, Docker Compose`
 
-## Repository Structure
+## 10. 한계
 
-```text
-peoplepulse-ai/
-├── src/peoplepulse/
-│   ├── slack/          # realtime ingestion
-│   ├── nlp/            # model/runtime evaluation
-│   ├── activity/       # actual monthly report parser
-│   ├── features/       # identity + rolling feature store
-│   ├── ml/             # attrition experiment pipeline
-│   ├── monitoring/     # Evidently / metrics
-│   ├── dashboard/      # backend dashboard service
-│   ├── agent/          # policy + LangGraph + tools
-│   └── evaluation/     # STEP 10 evaluation harness
-├── dashboard/          # Next.js frontend
-├── infra/              # PostgreSQL / MLflow / Prometheus / Grafana
-├── data/synthetic/     # portfolio-only synthetic datasets
-├── data/evaluation/    # Agent evaluation cases
-├── docs/portfolio/     # architecture, demo, interview, evaluation
-├── scripts/            # reproducible operations
-└── docker-compose.yml
-```
-
-## Tests / Preflight
-
-```powershell
-pytest -q
-python scripts/check_step10_portfolio.py
-python scripts/run_step10_policy_eval.py
-```
-
-The STEP 10 deterministic policy gate requires **100%** accuracy on the committed policy/tool-intent dataset before the portfolio preflight passes.
-
-## Interview Material
-
-- [Interview guide](docs/portfolio/interview-guide.md)
-- [Architecture](docs/portfolio/architecture.md)
-- [Demo scenario](docs/portfolio/demo-scenario.md)
-- [Evaluation methodology](docs/portfolio/evaluation-methodology.md)
-- [Final checklist](docs/portfolio/portfolio-checklist.md)
-
-## Limitations
-
-- Synthetic data is used for portfolio ML and employee-level demonstrations.
-- The project does not establish causal links between workplace signals and attrition.
-- The Agent hallucination metric is a numeric-grounding proxy, not complete semantic fact checking.
-- Regex/deterministic policy checks are an explicit safety layer but not a substitute for enterprise authorization, governance and audit systems.
-- LangGraph `InMemorySaver` is intentionally non-durable; long-term production memory is not implemented.
-- Docker Compose is a reproducible single-machine portfolio deployment, not HA/Kubernetes production infrastructure.
-- Fairness-by-protected-class evaluation is not demonstrated because governed demographic labels are intentionally not included in this public/synthetic portfolio.
-
-## License / Data Note
-
-Do not commit real employee messages, browsing logs, monthly employee reports, API tokens or `.env` files. The repository is designed to be demonstrated with synthetic data.
+- employee-level ML 결과는 synthetic data에만 해당합니다.
+- causal attrition prediction을 주장하지 않습니다.
+- protected-class fairness evaluation은 public dataset에 해당 demographic label을 포함하지 않아 수행하지 않았습니다.
+- Docker Compose는 single-machine reproducible environment이며 HA production infrastructure는 아닙니다.
+- deterministic policy guard는 enterprise authorization과 audit system을 대체하지 않습니다.
