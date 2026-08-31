@@ -34,7 +34,10 @@ def test_invalid_nlp_redis_timeout_is_rejected() -> None:
 
 
 def test_activity_runtime_rejects_placeholders() -> None:
-    settings = Settings()
+    settings = Settings(
+        _env_file=None,
+        employee_hash_key="replace-with-a-long-random-secret",
+    )
     with pytest.raises(RuntimeError):
         settings.validate_activity_runtime()
 
@@ -45,7 +48,11 @@ def test_activity_runtime_accepts_secure_local_values() -> None:
 
 
 def test_activity_api_runtime_requires_admin_secret() -> None:
-    settings = Settings(employee_hash_key="employee-hmac-secret-for-tests")
+    settings = Settings(
+        _env_file=None,
+        employee_hash_key="employee-hmac-secret-for-tests",
+        activity_admin_token="replace-with-a-long-random-admin-token",
+    )
     with pytest.raises(RuntimeError):
         settings.validate_activity_api_runtime()
     settings = Settings(

@@ -138,6 +138,9 @@ export default function DashboardPage() {
       const message = event as MessageEvent<string>;
       setLive(JSON.parse(message.data) as SlackLive);
       setConnected(true);
+      void getJson<{ points: SlackTrendPoint[] }>("/api/v1/dashboard/slack/trend?minutes=60")
+        .then((data) => setTrend(data.points))
+        .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
     });
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);

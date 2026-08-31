@@ -103,17 +103,17 @@ def model_shap() -> dict:
 
 
 @router.get("/slack/stream", response_class=EventSourceResponse)
-async def slack_stream() -> EventSourceResponse:
+async def slack_stream():
     settings = get_settings()
-
-    async def events():
-        last: str | None = None
-        while True:
-            payload = _service().slack_live()
-            encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
-            if encoded != last:
-                last = encoded
-                yield ServerSentEvent(data=encoded, event="slack_signal")
-            await asyncio.sleep(settings.dashboard_stream_interval_seconds)
-
-    return EventSourceResponse(events())
+    service = _service()
+    last: str | None = None
+    while True:
+        # psycopg is synchronous, so keep database reads off the ASGI event loop.
+        payload = await asyncio.to_thread(service.slack_live)
+        encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        if encoded != last:
+            last = encoded
+            # FastAPI 0.141+ encodes ServerSentEvent.data as JSON. Yield the
+            # object itself so EventSource.message.data remains valid JSON.
+            yield ServerSentEvent(data=payload, event="slack_signal")
+        await asyncio.sleep(settings.dashboard_stream_interval_seconds)
