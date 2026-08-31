@@ -57,6 +57,7 @@ def employees() -> dict:
             "individual_state_source": "voluntary_self_report_only",
             "key_staff_source": "manual_manager_designation_only",
             "department_minimum_cohort_size": get_settings().activity_min_cohort_size,
+            "timeline_groupings": ["overall", "department", "job_title"],
         },
     }
 
@@ -96,6 +97,13 @@ def department_work_signal_trend(
         granularity=granularity,
         department=department,
     )
+
+
+@router.get("/organization/support-timeline")
+def organization_support_timeline(
+    granularity: Annotated[TrendGranularity, Query()] = "day",
+) -> dict:
+    return _employee_service().organization_support_timeline(granularity)
 
 
 @router.get("/slack/live")

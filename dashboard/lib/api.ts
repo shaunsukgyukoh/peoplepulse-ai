@@ -66,6 +66,64 @@ export type DepartmentSignalTrendResponse = {
   points: DepartmentSignalTrendPoint[];
 };
 
+export type TimelineGrouping = "overall" | "department" | "job_title";
+
+export type TimelineGroup = {
+  label: string;
+  active_employee_count: number;
+  eligible: boolean;
+};
+
+export type WorkSignalTimelinePoint = {
+  group: string;
+  bucket: string;
+  cohort_employee_count: number;
+  message_count: number;
+  work_strain: number;
+  signals: SignalMap;
+};
+
+export type SelfReportTimelinePoint = {
+  group: string;
+  bucket: string;
+  reporting_employee_count: number;
+  status_rates: {
+    good: number;
+    okay: number;
+    needs_support: number;
+    prefer_not_to_say: number;
+  };
+};
+
+export type OrganizationTimelineScope = {
+  group_by: TimelineGrouping;
+  groups: TimelineGroup[];
+  work_signal_points: WorkSignalTimelinePoint[];
+  self_report_points: SelfReportTimelinePoint[];
+};
+
+export type OrganizationSupportTimelineResponse = {
+  granularity: TrendGranularity;
+  window: string;
+  timezone: string;
+  minimum_cohort_size: number;
+  groupings: TimelineGrouping[];
+  sources: {
+    self_report: "voluntary_employee_self_report_only";
+    work_signals: "aggregate_work_communication_signals_only";
+  };
+  source_groupings: {
+    self_report: TimelineGrouping[];
+    work_signals: TimelineGrouping[];
+  };
+  privacy: {
+    employee_first_aggregation: boolean;
+    individual_identifiers_returned: false;
+    psychological_diagnosis: false;
+  };
+  scopes: Record<TimelineGrouping, OrganizationTimelineScope>;
+};
+
 export type EmployeeRow = {
   employee_id_hash: string;
   employee_name: string;
@@ -93,6 +151,7 @@ export type EmployeesResponse = {
     individual_state_source: string;
     key_staff_source: string;
     department_minimum_cohort_size: number;
+    timeline_groupings: TimelineGrouping[];
   };
 };
 

@@ -16,6 +16,11 @@ TREND_WINDOWS: dict[str, tuple[str, str, str]] = {
     "month": ("month", "12 months", "last_12_months"),
 }
 TREND_TIMEZONE = "Asia/Seoul"
+TIMELINE_GROUP_EXPRESSIONS: dict[str, str] = {
+    "overall": "'전체'",
+    "department": "COALESCE(NULLIF(BTRIM(d.department), ''), '부서 미지정')",
+    "job_title": "COALESCE(NULLIF(BTRIM(d.job_title), ''), '직책 미지정')",
+}
 
 
 def _trend_window(granularity: str) -> tuple[str, str, str]:
@@ -23,6 +28,13 @@ def _trend_window(granularity: str) -> tuple[str, str, str]:
         return TREND_WINDOWS[granularity]
     except KeyError as exc:
         raise ValueError(f"unsupported trend granularity: {granularity}") from exc
+
+
+def _timeline_group_expression(group_by: str) -> str:
+    try:
+        return TIMELINE_GROUP_EXPRESSIONS[group_by]
+    except KeyError as exc:
+        raise ValueError(f"unsupported timeline grouping: {group_by}") from exc
 
 
 @dataclass
@@ -188,6 +200,209 @@ class EmployeeDashboardService:
                 }
                 for row in rows
             ],
+        }
+
+    def organization_support_timeline(self, granularity: str) -> dict[str, Any]:
+        bucket_unit, interval_value, window = _trend_window(granularity)
+        minimum_cohort_size = self.settings.activity_min_cohort_size
+        scopes: dict[str, dict[str, Any]] = {}
+
+        with self._connect() as connection:
+            directory_exists = self._table_exists(connection, "core.employee_directory")
+            work_signals_exist = self._table_exists(connection, "features.message_nlp_signal")
+            self_reports_exist = self._table_exists(
+                connection, "core.employee_self_report_history"
+            )
+
+            for group_by in TIMELINE_GROUP_EXPRESSIONS:
+                group_expression = _timeline_group_expression(group_by)
+                group_rows: list[dict[str, Any]] = []
+                work_signal_rows: list[dict[str, Any]] = []
+                self_report_rows: list[dict[str, Any]] = []
+
+                if directory_exists:
+                    with connection.cursor() as cursor:
+                        cursor.execute(
+                            f"""
+                            SELECT
+                                {group_expression} AS group_name,
+                                COUNT(*)::bigint AS active_employee_count
+                            FROM core.employee_directory d
+                            WHERE d.is_active = TRUE
+                            GROUP BY 1
+                            HAVING COUNT(*) >= %s
+                            ORDER BY active_employee_count DESC, group_name
+                            """,
+                            (minimum_cohort_size,),
+                        )
+                        group_rows = cursor.fetchall()
+
+                        if work_signals_exist and group_by == "department":
+                            employee_signal_select = ",\n".join(
+                                f"AVG(m.{signal})::double precision AS {signal}"
+                                for signal in SIGNALS
+                            )
+                            group_signal_select = ",\n".join(
+                                f"AVG({signal})::double precision AS {signal}"
+                                for signal in SIGNALS
+                            )
+                            strain_expr = " + ".join(WORK_STRAIN_SIGNALS)
+                            cursor.execute(
+                                f"""
+                                WITH employee_bucket AS (
+                                    SELECT
+                                        {group_expression} AS group_name,
+                                        m.employee_id_hash,
+                                        DATE_TRUNC(
+                                            '{bucket_unit}',
+                                            COALESCE(m.message_ts, m.received_at)
+                                                AT TIME ZONE '{TREND_TIMEZONE}'
+                                        ) AT TIME ZONE '{TREND_TIMEZONE}' AS bucket,
+                                        COUNT(*)::bigint AS message_count,
+                                        AVG(({strain_expr}) / {len(WORK_STRAIN_SIGNALS)}.0)
+                                            ::double precision AS work_strain,
+                                        {employee_signal_select}
+                                    FROM features.message_nlp_signal m
+                                    JOIN core.employee_directory d
+                                      ON d.employee_id_hash = m.employee_id_hash
+                                     AND d.is_active = TRUE
+                                    WHERE COALESCE(m.message_ts, m.received_at)
+                                              >= NOW() - INTERVAL '{interval_value}'
+                                    GROUP BY group_name, m.employee_id_hash, bucket
+                                )
+                                SELECT
+                                    group_name,
+                                    bucket,
+                                    COUNT(*)::bigint AS cohort_employee_count,
+                                    SUM(message_count)::bigint AS message_count,
+                                    AVG(work_strain)::double precision AS work_strain,
+                                    {group_signal_select}
+                                FROM employee_bucket
+                                GROUP BY group_name, bucket
+                                HAVING COUNT(*) >= %s
+                                ORDER BY bucket, group_name
+                                """,
+                                (minimum_cohort_size,),
+                            )
+                            work_signal_rows = cursor.fetchall()
+
+                        if self_reports_exist:
+                            cursor.execute(
+                                f"""
+                                WITH ranked_report AS (
+                                    SELECT
+                                        {group_expression} AS group_name,
+                                        h.employee_id_hash,
+                                        DATE_TRUNC(
+                                            '{bucket_unit}',
+                                            h.recorded_at AT TIME ZONE '{TREND_TIMEZONE}'
+                                        ) AT TIME ZONE '{TREND_TIMEZONE}' AS bucket,
+                                        h.status,
+                                        ROW_NUMBER() OVER (
+                                            PARTITION BY
+                                                {group_expression},
+                                                h.employee_id_hash,
+                                                DATE_TRUNC(
+                                                    '{bucket_unit}',
+                                                    h.recorded_at
+                                                        AT TIME ZONE '{TREND_TIMEZONE}'
+                                                )
+                                            ORDER BY h.recorded_at DESC
+                                        ) AS recency
+                                    FROM core.employee_self_report_history h
+                                    JOIN core.employee_directory d
+                                      ON d.employee_id_hash = h.employee_id_hash
+                                     AND d.is_active = TRUE
+                                    WHERE h.recorded_at >= NOW() - INTERVAL '{interval_value}'
+                                )
+                                SELECT
+                                    group_name,
+                                    bucket,
+                                    COUNT(*)::bigint AS reporting_employee_count,
+                                    COUNT(*) FILTER (WHERE status = 'good')::bigint
+                                        AS good_count,
+                                    COUNT(*) FILTER (WHERE status = 'okay')::bigint
+                                        AS okay_count,
+                                    COUNT(*) FILTER (WHERE status = 'needs_support')::bigint
+                                        AS needs_support_count,
+                                    COUNT(*) FILTER (WHERE status = 'prefer_not_to_say')::bigint
+                                        AS prefer_not_to_say_count
+                                FROM ranked_report
+                                WHERE recency = 1
+                                GROUP BY group_name, bucket
+                                HAVING COUNT(*) >= %s
+                                ORDER BY bucket, group_name
+                                """,
+                                (minimum_cohort_size,),
+                            )
+                            self_report_rows = cursor.fetchall()
+
+                scopes[group_by] = {
+                    "group_by": group_by,
+                    "groups": [
+                        {
+                            "label": row["group_name"],
+                            "active_employee_count": int(row["active_employee_count"]),
+                            "eligible": int(row["active_employee_count"])
+                            >= minimum_cohort_size,
+                        }
+                        for row in group_rows
+                    ],
+                    "work_signal_points": [
+                        {
+                            "group": row["group_name"],
+                            "bucket": row["bucket"].isoformat(),
+                            "cohort_employee_count": int(row["cohort_employee_count"]),
+                            "message_count": int(row["message_count"]),
+                            "work_strain": float(row["work_strain"] or 0.0),
+                            "signals": {
+                                signal: float(row[signal] or 0.0) for signal in SIGNALS
+                            },
+                        }
+                        for row in work_signal_rows
+                    ],
+                    "self_report_points": [
+                        {
+                            "group": row["group_name"],
+                            "bucket": row["bucket"].isoformat(),
+                            "reporting_employee_count": int(
+                                row["reporting_employee_count"]
+                            ),
+                            "status_rates": {
+                                status: int(row[f"{status}_count"])
+                                / int(row["reporting_employee_count"])
+                                for status in (
+                                    "good",
+                                    "okay",
+                                    "needs_support",
+                                    "prefer_not_to_say",
+                                )
+                            },
+                        }
+                        for row in self_report_rows
+                    ],
+                }
+
+        return {
+            "granularity": granularity,
+            "window": window,
+            "timezone": TREND_TIMEZONE,
+            "minimum_cohort_size": minimum_cohort_size,
+            "groupings": list(TIMELINE_GROUP_EXPRESSIONS),
+            "sources": {
+                "self_report": "voluntary_employee_self_report_only",
+                "work_signals": "aggregate_work_communication_signals_only",
+            },
+            "source_groupings": {
+                "self_report": list(TIMELINE_GROUP_EXPRESSIONS),
+                "work_signals": ["department"],
+            },
+            "privacy": {
+                "employee_first_aggregation": True,
+                "individual_identifiers_returned": False,
+                "psychological_diagnosis": False,
+            },
+            "scopes": scopes,
         }
 
     def department_work_signal_trend(

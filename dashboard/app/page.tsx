@@ -6,16 +6,15 @@ import type { EChartsOption } from "echarts";
 import EChart from "@/components/EChart";
 import {
   apiBase,
-  getAdminJson,
   getJson,
   patchJson,
   type EmployeeRow,
   type EmployeesResponse,
   type Overview,
+  type OrganizationSupportTimelineResponse,
+  type OrganizationTimelineScope,
   type SlackLive,
   type SlackTrendPoint,
-  type SelfReportTrendResponse,
-  type DepartmentSignalTrendResponse,
   type TrendGranularity,
 } from "@/lib/api";
 
@@ -48,6 +47,8 @@ const TREND_GRANULARITY_OPTIONS: Array<{
   { value: "week", label: "주", detail: "최근 12주" },
   { value: "month", label: "월", detail: "최근 12개월" },
 ];
+
+type TimelineMetric = "work_strain" | "self_report";
 
 function pct(value: number | undefined | null): string {
   return typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "—";
@@ -96,55 +97,41 @@ function trendBucketLabel(bucket: string, granularity: TrendGranularity): string
   return date.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
 }
 
-function employeeSelfReportTrendChart(
-  result: SelfReportTrendResponse | null,
-  granularity: TrendGranularity,
-): EChartsOption {
-  const points = result?.points ?? [];
-  const statusOrder = ["지원 필요", "보통", "좋음", "응답 안 함"];
-  return {
-    tooltip: { trigger: "axis" },
-    grid: { left: 72, right: 22, top: 24, bottom: 42 },
-    xAxis: {
-      type: "category",
-      data: points.map((point) => trendBucketLabel(point.bucket, granularity)),
-      boundaryGap: false,
-      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
-      axisLabel: { color: "#78958c", hideOverlap: true, rotate: granularity === "hour" ? 25 : 0 },
-    },
-    yAxis: {
-      type: "category",
-      data: statusOrder,
-      axisLabel: { color: "#9bb5ad" },
-      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
-      splitLine: { show: true, lineStyle: { color: "rgba(184,216,207,.07)" } },
-    },
-    series: [
-      {
-        name: "자발적 Self-report",
-        type: "line",
-        step: "end",
-        symbolSize: 8,
-        lineStyle: { width: 3, color: "#8ab9ff" },
-        itemStyle: { color: "#8ab9ff" },
-        data: points.map((point) => SELF_REPORT_LABEL[point.status] ?? point.status),
-      },
-    ],
-  };
+function timelineBucketAxis(
+  result: OrganizationSupportTimelineResponse,
+  metric: TimelineMetric,
+): string[] {
+  const buckets = Object.values(result.scopes).flatMap((scope) => (
+    metric === "work_strain"
+      ? scope.work_signal_points.map((point) => point.bucket)
+      : scope.self_report_points.map((point) => point.bucket)
+  ));
+  return Array.from(new Set(buckets)).sort();
 }
 
-function departmentSignalTrendChart(
-  result: DepartmentSignalTrendResponse | null,
+function overallTimelineChart(
+  scope: OrganizationTimelineScope,
   granularity: TrendGranularity,
+  metric: TimelineMetric,
+  buckets: string[],
 ): EChartsOption {
-  const points = result?.points ?? [];
+  const points = metric === "work_strain"
+    ? scope.work_signal_points.map((point) => ({
+        bucket: point.bucket,
+        value: point.work_strain,
+      }))
+    : scope.self_report_points.map((point) => ({
+        bucket: point.bucket,
+        value: point.status_rates.needs_support,
+      }));
+  const values = new Map(points.map((point) => [point.bucket, point.value]));
+  const label = metric === "work_strain" ? "업무 커뮤니케이션 긴장" : "자발적 지원 필요 응답";
   return {
     tooltip: { trigger: "axis", valueFormatter: (value) => `${(Number(value) * 100).toFixed(1)}%` },
-    legend: { data: ["업무 긴장", "긍정 표현", "과부하 표현"], textStyle: { color: "#9bb5ad" } },
-    grid: { left: 44, right: 22, top: 44, bottom: 42 },
+    grid: { left: 46, right: 22, top: 26, bottom: 42 },
     xAxis: {
       type: "category",
-      data: points.map((point) => trendBucketLabel(point.bucket, granularity)),
+      data: buckets.map((bucket) => trendBucketLabel(bucket, granularity)),
       boundaryGap: false,
       axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
       axisLabel: { color: "#78958c", hideOverlap: true, rotate: granularity === "hour" ? 25 : 0 },
@@ -157,11 +144,89 @@ function departmentSignalTrendChart(
       splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
     },
     series: [
-      { name: "업무 긴장", type: "line", smooth: true, data: points.map((point) => point.work_strain) },
-      { name: "긍정 표현", type: "line", smooth: true, data: points.map((point) => point.signals.satisfied ?? 0) },
-      { name: "과부하 표현", type: "line", smooth: true, data: points.map((point) => point.signals.overloaded ?? 0) },
+      {
+        name: label,
+        type: "line",
+        smooth: true,
+        showSymbol: false,
+        areaStyle: { color: "rgba(101,230,180,.08)" },
+        lineStyle: { width: 3, color: "#65e6b4" },
+        itemStyle: { color: "#65e6b4" },
+        data: buckets.map((bucket) => values.get(bucket) ?? null),
+      },
     ],
   };
+}
+
+function groupedTimelineHeatmap(
+  scope: OrganizationTimelineScope,
+  granularity: TrendGranularity,
+  metric: TimelineMetric,
+  buckets: string[],
+): EChartsOption {
+  const groups = scope.groups.filter((group) => group.eligible).map((group) => group.label);
+  const sourcePoints = metric === "work_strain"
+    ? scope.work_signal_points.map((point) => ({
+        group: point.group,
+        bucket: point.bucket,
+        value: point.work_strain,
+      }))
+    : scope.self_report_points.map((point) => ({
+        group: point.group,
+        bucket: point.bucket,
+        value: point.status_rates.needs_support,
+      }));
+  const data: Array<[number, number, number]> = sourcePoints
+    .filter((point) => groups.includes(point.group))
+    .map((point) => [buckets.indexOf(point.bucket), groups.indexOf(point.group), point.value]);
+  return {
+    tooltip: { position: "top" },
+    grid: { left: 104, right: 24, top: 18, bottom: 64 },
+    xAxis: {
+      type: "category",
+      data: buckets.map((bucket) => trendBucketLabel(bucket, granularity)),
+      splitArea: { show: true },
+      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
+      axisLabel: { color: "#78958c", hideOverlap: true, rotate: granularity === "hour" ? 25 : 0 },
+    },
+    yAxis: {
+      type: "category",
+      data: groups,
+      splitArea: { show: true },
+      axisLabel: { color: "#9bb5ad", width: 92, overflow: "truncate" },
+    },
+    visualMap: {
+      min: 0,
+      max: 1,
+      calculable: false,
+      orient: "horizontal",
+      left: "center",
+      bottom: 4,
+      text: ["높음", "낮음"],
+      textStyle: { color: "#78958c" },
+      inRange: { color: ["#17362e", "#65e6b4", "#f5c76b", "#ff8e8e"] },
+    },
+    series: [
+      {
+        name: metric === "work_strain" ? "업무 커뮤니케이션 긴장" : "자발적 지원 필요 응답",
+        type: "heatmap",
+        data,
+        label: { show: false },
+        emphasis: { itemStyle: { shadowBlur: 12, shadowColor: "rgba(0,0,0,.45)" } },
+      },
+    ],
+  };
+}
+
+function timelinePointCount(scope: OrganizationTimelineScope, metric: TimelineMetric): number {
+  return metric === "work_strain"
+    ? scope.work_signal_points.length
+    : scope.self_report_points.length;
+}
+
+function timelineHeatmapHeight(scope: OrganizationTimelineScope): number {
+  const eligibleGroups = scope.groups.filter((group) => group.eligible).length;
+  return Math.max(260, Math.min(620, eligibleGroups * 30 + 100));
 }
 
 function selfReportChart(summary: EmployeesResponse | null): EChartsOption {
@@ -200,13 +265,10 @@ export default function DashboardPage() {
   const [sortBy, setSortBy] = useState("starred");
   const [adminToken, setAdminToken] = useState("");
   const [savingStar, setSavingStar] = useState<string | null>(null);
-  const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>("day");
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
-  const [selectedDepartment, setSelectedDepartment] = useState("");
-  const [employeeTrend, setEmployeeTrend] = useState<SelfReportTrendResponse | null>(null);
-  const [departmentTrend, setDepartmentTrend] = useState<DepartmentSignalTrendResponse | null>(null);
-  const [employeeTrendError, setEmployeeTrendError] = useState<string | null>(null);
-  const [departmentTrendError, setDepartmentTrendError] = useState<string | null>(null);
+  const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>("week");
+  const [timelineMetric, setTimelineMetric] = useState<TimelineMetric>("self_report");
+  const [timelineData, setTimelineData] = useState<OrganizationSupportTimelineResponse | null>(null);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
 
   const [reportMonth, setReportMonth] = useState("2026-07");
   const [jobFile, setJobFile] = useState<File | null>(null);
@@ -260,74 +322,25 @@ export default function DashboardPage() {
   );
 
   useEffect(() => {
-    const employees = employeesData?.employees ?? [];
-    if (!selectedEmployeeId && employees.length) {
-      setSelectedEmployeeId(employees[0].employee_id_hash);
-    }
-    if (!selectedDepartment && departments.length) {
-      const minimumCohort = employeesData?.signal_policy.department_minimum_cohort_size ?? 5;
-      const counts = employeesData?.summary.departments ?? {};
-      const eligibleDepartments = departments.filter(
-        (item) => item !== "미지정" && (counts[item] ?? 0) >= minimumCohort,
-      );
-      eligibleDepartments.sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
-      setSelectedDepartment(eligibleDepartments[0] ?? departments[0]);
-    }
-  }, [departments, employeesData, selectedDepartment, selectedEmployeeId]);
-
-  useEffect(() => {
-    if (!selectedEmployeeId || !adminToken) {
-      setEmployeeTrend(null);
-      setEmployeeTrendError(null);
-      return;
-    }
     let cancelled = false;
-    const timer = window.setTimeout(() => {
-      const path = `/api/v1/dashboard/employees/${selectedEmployeeId}/self-report/trend?granularity=${trendGranularity}`;
-      void getAdminJson<SelfReportTrendResponse>(path, adminToken)
-        .then((result) => {
-          if (!cancelled) {
-            setEmployeeTrend(result);
-            setEmployeeTrendError(null);
-          }
-        })
-        .catch((reason) => {
-          if (!cancelled) {
-            setEmployeeTrend(null);
-            setEmployeeTrendError(reason instanceof Error ? reason.message : String(reason));
-          }
-        });
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [adminToken, employeesData, selectedEmployeeId, trendGranularity]);
-
-  useEffect(() => {
-    if (!selectedDepartment) {
-      setDepartmentTrend(null);
-      return;
-    }
-    let cancelled = false;
-    const path = `/api/v1/dashboard/departments/work-signals/trend?granularity=${trendGranularity}&department=${encodeURIComponent(selectedDepartment)}`;
-    void getJson<DepartmentSignalTrendResponse>(path)
+    const path = `/api/v1/dashboard/organization/support-timeline?granularity=${trendGranularity}`;
+    void getJson<OrganizationSupportTimelineResponse>(path)
       .then((result) => {
         if (!cancelled) {
-          setDepartmentTrend(result);
-          setDepartmentTrendError(null);
+          setTimelineData(result);
+          setTimelineError(null);
         }
       })
       .catch((reason) => {
         if (!cancelled) {
-          setDepartmentTrend(null);
-          setDepartmentTrendError(reason instanceof Error ? reason.message : String(reason));
+          setTimelineData(null);
+          setTimelineError(reason instanceof Error ? reason.message : String(reason));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedDepartment, signalRevision, trendGranularity]);
+  }, [signalRevision, trendGranularity]);
 
   const filteredEmployees = useMemo(() => {
     const rows = [...(employeesData?.employees ?? [])].filter((row) => {
@@ -392,6 +405,14 @@ export default function DashboardPage() {
   const workforce = employeesData?.summary ?? overview?.workforce;
   const currentLive = live ?? overview?.slack;
   const needsSupport = workforce?.self_report?.needs_support ?? 0;
+  const timelineScopes = timelineData?.scopes;
+  const timelineSourceTitle = timelineMetric === "work_strain"
+    ? "업무 커뮤니케이션 긴장"
+    : "자발적 지원 필요 응답";
+  const timelineSourceDetail = timelineMetric === "work_strain"
+    ? "Slack 업무 표현을 직원별로 먼저 평균한 뒤 조직도상 부서별로만 재집계합니다. 심리 상태나 정신건강 진단이 아닙니다."
+    : "직원이 직접 제출한 self-report 중 ‘지원 필요’ 응답 비율입니다. 개인 응답은 표시하지 않습니다.";
+  const timelineAxisBuckets = timelineData ? timelineBucketAxis(timelineData, timelineMetric) : [];
 
   return (
     <div className="shell">
@@ -400,8 +421,8 @@ export default function DashboardPage() {
         <div className="brand-sub">HR workforce support dashboard</div>
         <nav className="nav">
           <a href="#overview">운영 요약</a>
+          <a href="#state-trends">조직 타임라인</a>
           <a href="#employees">직원 현황</a>
-          <a href="#state-trends">상태 추세</a>
           <a href="#signals">조직 업무 신호</a>
           <a href="#reports">월말 데이터 업데이트</a>
         </nav>
@@ -414,8 +435,8 @@ export default function DashboardPage() {
         <header className="topbar">
           <div>
             <div className="eyebrow">PRODUCTION HR OPERATIONS</div>
-            <h1>직원 지원에 필요한 정보만,<br />한 화면에서.</h1>
-            <p>실명 직원 디렉터리, 자발적 상태 공유, 수동 핵심인력 표시, 조직 수준 업무 커뮤니케이션 신호를 제공합니다. 모델 성능·SHAP·Synthetic 평가 정보는 운영 화면에서 제외했습니다.</p>
+            <h1>조직의 흐름을 먼저 보고,<br />지원이 필요한 곳을 찾습니다.</h1>
+            <p>전체·조직도상 부서·직책의 시계열을 같은 화면에서 비교하고, 자발적 상태 공유와 업무 커뮤니케이션 신호의 출처를 분리해 보여줍니다. 개인 심리 추론이나 인사 판단 점수는 제공하지 않습니다.</p>
           </div>
           <div className="status-cluster">
             <span className={`badge ${connected ? "badge-live" : ""}`}><span className="dot" />{connected ? "Live" : "Reconnecting"}</span>
@@ -433,6 +454,107 @@ export default function DashboardPage() {
             <div className="metric-card"><div className="metric-label">Self-report 지원 필요</div><div className="metric-value">{needsSupport}</div><div className="metric-detail">자발적 상태 공유 기준</div></div>
             <div className="metric-card"><div className="metric-label">조직 업무 긴장 신호</div><div className="metric-value">{pct(currentLive?.work_strain)}</div><div className="metric-detail">최근 15분 조직 전체 집계</div></div>
             <div className="metric-card"><div className="metric-label">최근 월말 데이터</div><div className="metric-value">{overview?.latest_report?.report_month ?? "—"}</div><div className="metric-detail">3종 보고서 처리 현황</div></div>
+          </div>
+        </section>
+
+        <section id="state-trends" className="section-shell">
+          <div className="section-head trend-section-head">
+            <div>
+              <div className="eyebrow">Organization Support Timeline</div>
+              <h2>전체·부서·직책을 한 시간축에서</h2>
+              <p>전체 조직의 흐름을 먼저 보고, 같은 기간의 조직도상 부서와 직책별 차이를 히트맵으로 함께 비교합니다. 모든 그룹은 최소 인원 기준을 통과한 구간만 표시합니다.</p>
+            </div>
+            <div className="timeline-control-stack">
+              <div className="source-tabs" aria-label="타임라인 데이터 출처">
+                <button type="button" className={timelineMetric === "work_strain" ? "active" : ""} onClick={() => setTimelineMetric("work_strain")}>업무 커뮤니케이션 · 부서</button>
+                <button type="button" className={timelineMetric === "self_report" ? "active" : ""} onClick={() => setTimelineMetric("self_report")}>Self-report · 전체/부서/직책</button>
+              </div>
+              <div className="range-tabs" aria-label="추세 집계 단위">
+                {TREND_GRANULARITY_OPTIONS.map((option) => (
+                  <button
+                    type="button"
+                    key={option.value}
+                    className={trendGranularity === option.value ? "active" : ""}
+                    onClick={() => setTrendGranularity(option.value)}
+                    title={option.detail}
+                  >
+                    {option.label}<small>{option.detail}</small>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="timeline-source-note">
+            <div><span className="timeline-source-dot" />{timelineSourceTitle}</div>
+            <p>{timelineSourceDetail}</p>
+            <span>구간별 최소 {timelineData?.minimum_cohort_size ?? 5}명</span>
+          </div>
+          {timelineError && <div className="notice error">{timelineError}</div>}
+
+          <div className="timeline-overview-grid">
+            <div className="panel timeline-overall-panel">
+              <div className="panel-title">
+                <span>전체 조직 타임라인</span>
+                <span className="panel-subtitle">{timelineScopes?.overall.groups[0]?.active_employee_count ?? 0}명 · organization-wide</span>
+              </div>
+              {timelineMetric === "work_strain" ? (
+                <div className="timeline-empty">업무 커뮤니케이션 신호는 조직도상 부서 집계에서만 제공합니다. 전체 조직 추세는 자발적 Self-report 보기에서 확인할 수 있습니다.</div>
+              ) : timelineScopes?.overall && timelinePointCount(timelineScopes.overall, timelineMetric) > 0 ? (
+                <EChart option={overallTimelineChart(timelineScopes.overall, trendGranularity, timelineMetric, timelineAxisBuckets)} height={310} />
+              ) : <div className="timeline-empty">선택한 기간에 최소 인원 기준을 충족한 전체 조직 데이터가 없습니다.</div>}
+            </div>
+            <div className="timeline-reading-guide">
+              <div className="eyebrow">HOW TO READ</div>
+              <strong>{timelineMetric === "self_report" ? <>전체 흐름에서 시작해<br />그룹 차이로 내려갑니다.</> : <>부서 간 업무 표현의<br />변화만 비교합니다.</>}</strong>
+              {timelineMetric === "self_report" ? (
+                <ol>
+                  <li>전체 조직 선으로 변화 시점을 확인</li>
+                  <li>부서 히트맵에서 같은 시점의 차이 확인</li>
+                  <li>직책 히트맵으로 역할군의 공통 패턴 확인</li>
+                </ol>
+              ) : (
+                <ol>
+                  <li>부서 히트맵에서 변화 시점 확인</li>
+                  <li>업무환경 개선 논의의 시작점으로만 활용</li>
+                  <li>개인이나 직책 단위로 역추적하지 않음</li>
+                </ol>
+              )}
+              <p>색이 진해도 개인 심리 진단이나 인사 판단 근거로 사용할 수 없습니다.</p>
+            </div>
+          </div>
+
+          <div className="timeline-heatmap-grid">
+            <div className="panel timeline-heatmap-panel">
+              <div className="panel-title">
+                <span>조직도상 부서별</span>
+                <span className="panel-subtitle">{timelineScopes?.department.groups.filter((group) => group.eligible).length ?? 0}개 부서 표시</span>
+              </div>
+              {timelineScopes?.department && timelinePointCount(timelineScopes.department, timelineMetric) > 0 ? (
+                <EChart option={groupedTimelineHeatmap(timelineScopes.department, trendGranularity, timelineMetric, timelineAxisBuckets)} height={timelineHeatmapHeight(timelineScopes.department)} />
+              ) : <div className="timeline-empty">이 기간에는 최소 인원 기준을 통과한 부서별 구간이 없습니다.</div>}
+              <div className="trend-policy">employee_directory.department 기준 · 직원별 선집계 → 부서 평균</div>
+            </div>
+
+            <div className="panel timeline-heatmap-panel">
+              <div className="panel-title">
+                <span>직책별</span>
+                <span className="panel-subtitle">{timelineScopes?.job_title.groups.filter((group) => group.eligible).length ?? 0}개 직책 표시</span>
+              </div>
+              {timelineMetric === "work_strain" ? (
+                <div className="timeline-empty">Slack 파생 업무 신호는 직책별로 제공하지 않습니다. 직책 타임라인은 자발적 Self-report 보기에서만 표시합니다.</div>
+              ) : timelineScopes?.job_title && timelinePointCount(timelineScopes.job_title, timelineMetric) > 0 ? (
+                <EChart option={groupedTimelineHeatmap(timelineScopes.job_title, trendGranularity, timelineMetric, timelineAxisBuckets)} height={timelineHeatmapHeight(timelineScopes.job_title)} />
+              ) : <div className="timeline-empty">이 기간에는 최소 인원 기준을 통과한 직책별 구간이 없습니다.</div>}
+              <div className="trend-policy">employee_directory.job_title 기준 · 직책 미입력은 별도 그룹</div>
+            </div>
+          </div>
+
+          <div className="timeline-policy-strip">
+            <span>{timelineMetric === "self_report" ? "전체 · 부서 · 직책 동시 비교" : "조직도상 부서만 제공"}</span>
+            <span>개인 식별값 0건</span>
+            <span>원문 비저장</span>
+            <span>심리·정신건강 진단 아님</span>
           </div>
         </section>
 
@@ -481,72 +603,6 @@ export default function DashboardPage() {
             </table>
           </div>
           {!filteredEmployees.length && <div className="notice">조건에 맞는 직원이 없습니다. Employee Directory가 비어 있다면 `scripts/load_employee_directory.py`로 먼저 등록하세요.</div>}
-        </section>
-
-        <section id="state-trends" className="section-shell">
-          <div className="section-head trend-section-head">
-            <div>
-              <div className="eyebrow">Time-series Support View</div>
-              <h2>시간·일·주·월 상태 추세</h2>
-              <p>직원별 차트는 자발적으로 제출된 self-report 이력만 사용합니다. 부서 차트는 조직도의 부서 정보를 기준으로 하며, 개인별 Slack 점수를 노출하지 않고 구간별 참여자가 최소 기준을 충족할 때만 직원 우선 집계된 업무 커뮤니케이션 신호를 표시합니다.</p>
-            </div>
-            <div className="range-tabs" aria-label="추세 집계 단위">
-              {TREND_GRANULARITY_OPTIONS.map((option) => (
-                <button
-                  type="button"
-                  key={option.value}
-                  className={trendGranularity === option.value ? "active" : ""}
-                  onClick={() => setTrendGranularity(option.value)}
-                  title={option.detail}
-                >
-                  {option.label}<small>{option.detail}</small>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid-2">
-            <div className="panel trend-panel">
-              <div className="panel-title">직원별 자발적 Self-report<span className="panel-subtitle">admin · employee-provided</span></div>
-              <div className="trend-controls">
-                <select className="field" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)}>
-                  {(employeesData?.employees ?? []).map((employee) => (
-                    <option key={employee.employee_id_hash} value={employee.employee_id_hash}>
-                      {employee.employee_name} · {employee.department}
-                    </option>
-                  ))}
-                </select>
-                <input className="field" type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder="관리자 토큰 입력" />
-              </div>
-              {!adminToken && <div className="notice">민감한 self-report 이력을 조회하려면 관리자 토큰을 입력하세요.</div>}
-              {employeeTrendError && <div className="notice error">{employeeTrendError}</div>}
-              {adminToken && employeeTrend && !employeeTrend.points.length && <div className="notice">선택한 기간에 자발적 self-report 이력이 없습니다.</div>}
-              {employeeTrend?.points.length ? <EChart option={employeeSelfReportTrendChart(employeeTrend, trendGranularity)} height={330} /> : null}
-            </div>
-
-            <div className="panel trend-panel">
-              <div className="panel-title">조직도상 부서별 업무 커뮤니케이션 추세<span className="panel-subtitle">department aggregate</span></div>
-              <div className="trend-controls single">
-                <select className="field" value={selectedDepartment} onChange={(event) => setSelectedDepartment(event.target.value)}>
-                  {departments.map((item) => {
-                    const count = employeesData?.summary.departments[item] ?? 0;
-                    const minimumCohort = employeesData?.signal_policy.department_minimum_cohort_size ?? 5;
-                    return (
-                      <option key={item} value={item} disabled={count < minimumCohort}>
-                        {item} · {count}명{count < minimumCohort ? " (집계 기준 미달)" : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              {departmentTrendError && <div className="notice error">{departmentTrendError}</div>}
-              {departmentTrend && !departmentTrend.points.length && (
-                <div className="notice">해당 기간에 최소 {departmentTrend.minimum_cohort_size}명 부서 집계 기준을 충족한 구간이 없습니다.</div>
-              )}
-              {departmentTrend?.points.length ? <EChart option={departmentSignalTrendChart(departmentTrend, trendGranularity)} height={330} /> : null}
-              {departmentTrend && <div className="trend-policy">조직도 부서 기준 · 직원별 선집계 → 부서 평균 · 최소 {departmentTrend.minimum_cohort_size}명 · 원문/개인 점수 비노출</div>}
-            </div>
-          </div>
         </section>
 
         <section id="signals" className="section-shell">
