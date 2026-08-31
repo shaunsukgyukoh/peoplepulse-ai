@@ -10,5 +10,5 @@
 ## Employee-data boundaries
 
 - Never expose employee-level Slack NLP scores or infer or display an employee's psychological or mental-health state from workplace communications.
-- An employee-level state view may use only a voluntary employee-provided self-report, must require administrative authorization, and must identify that source clearly.
+- Do not expose employee-level psychological or state views. The production dashboard does not accept or display self-report data.
 - Slack-derived workplace signals may be shown only as employee-first aggregates grouped by the organizational-chart `department` in `core.employee_directory`. Suppress every department/time bucket below `ACTIVITY_MIN_COHORT_SIZE`, which defaults to 5, and never return employee identifiers or raw messages in that aggregate response.

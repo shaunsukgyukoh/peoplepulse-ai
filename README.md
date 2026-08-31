@@ -42,9 +42,9 @@ Slack Events API와 Socket Mode로 message event를 받고 PII masking과 HMAC p
 
 raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 derived workplace signal만 저장하도록 설계했습니다.
 
-### Production dashboard 조직 지원 타임라인
+### Production dashboard 부서 업무 신호 타임라인
 
-운영 Dashboard의 핵심 화면은 동일한 시간축에서 전체 조직, 조직도상 부서, 직책을 한 번에 비교합니다. 전체 흐름은 line chart로, 부서와 직책의 같은 시점 차이는 heatmap으로 배치해 먼저 변화 시점을 찾고 어느 조직 범위에서 나타났는지 내려가며 확인할 수 있습니다.
+운영 Dashboard의 핵심 화면은 조직도상 부서의 업무 커뮤니케이션 신호를 동일한 시간축의 heatmap으로 비교합니다. 먼저 변화 시점을 찾고 어느 부서 구간에서 나타났는지 확인하도록 구성했습니다.
 
 | 선택 | 집계 단위 | 조회 범위 |
 |---|---|---|
@@ -53,13 +53,13 @@ raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 deriv
 | 주 | 1주 | 최근 12주 |
 | 월 | 1개월 | 최근 12개월 |
 
-- `자발적 Self-report` 보기에는 직원이 직접 제출한 이력 중 `needs_support` 응답 비율만 집계해 표시합니다. 개인 응답이나 식별값은 반환하지 않습니다.
-- `업무 커뮤니케이션` 보기는 Slack derived signal을 직원별로 먼저 평균한 뒤 `core.employee_directory.department`별로만 집계합니다. 전체·직책 단위 Slack 신호, Slack workspace team ID, 프로젝트 팀은 제공하지 않습니다.
-- 직책이 입력되지 않은 직원은 `직책 미지정` 그룹으로 분리합니다. 자발적 self-report의 전체·부서·직책 구간과 Slack 업무 신호의 부서 구간은 서로 다른 직원이 `ACTIVITY_MIN_COHORT_SIZE` 이상일 때만 반환하며, 5명 미만 그룹은 명칭과 인원 메타데이터도 응답에서 제외합니다. 기본값은 5명입니다.
-- 모든 구간은 `Asia/Seoul` 기준이며 Slack SSE revision이 바뀌면 세 조직 범위의 현재 타임라인을 한 API에서 다시 조회합니다.
+- Production Dashboard와 직원 directory CSV 입력은 self-report를 사용하지 않습니다. 과거 DB 컬럼이나 이력 테이블은 자동 삭제하지 않지만 API, UI, loader에서는 읽거나 쓰지 않습니다.
+- Slack derived signal은 직원별로 먼저 평균한 뒤 `core.employee_directory.department`별로만 집계합니다. 전체·직책 단위 Slack 신호, Slack workspace team ID, 프로젝트 팀은 제공하지 않습니다.
+- 부서·시간 구간마다 서로 다른 직원이 `ACTIVITY_MIN_COHORT_SIZE` 이상일 때만 반환하며, 5명 미만 부서는 명칭과 인원 메타데이터도 응답에서 제외합니다. 기본값은 5명입니다.
+- 모든 구간은 `Asia/Seoul` 기준이며 Slack SSE revision이 바뀌면 현재 부서 타임라인을 다시 조회합니다.
 - Slack 신호는 심리 상태나 정신건강 진단이 아니라 업무 표현의 집계입니다. 개인별 Slack NLP 점수는 API와 Dashboard 모두에서 노출하지 않습니다.
 
-통합 API는 `GET /api/v1/dashboard/organization/support-timeline`이며 한 응답의 `scopes.overall`, `scopes.department`, `scopes.job_title`에 자발적 self-report 시계열을, `scopes.department`에만 업무 커뮤니케이션 시계열을 제공합니다. `source_groupings`가 출처별 허용 범위를 명시하며 `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다. 기존 부서 전용 `GET /api/v1/dashboard/departments/work-signals/trend`도 호환성을 위해 유지합니다.
+통합 API는 `GET /api/v1/dashboard/organization/support-timeline`이며 `grouping=department`, 최소 인원 기준을 통과한 `departments`, 부서별 `points`, 개인정보 비노출 정책을 반환합니다. `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다. 기존 `GET /api/v1/dashboard/departments/work-signals/trend`도 호환성을 위해 유지합니다.
 
 ### Monthly data pipeline
 
@@ -190,7 +190,6 @@ Monthly Reports
 Production-oriented HR operations view
 
 - employee directory
-- voluntary self-report
 - manual key-staff marker
 - aggregate Slack work signals
 - monthly report operations
@@ -222,7 +221,7 @@ python scripts/apply_production_main_migration.py
 python scripts/load_employee_directory.py data/employee_directory.csv
 ```
 
-실제 Slack realtime 연결에는 Socket Mode용 `SLACK_APP_TOKEN`, bot용 `SLACK_BOT_TOKEN`, 서명 검증용 `SLACK_SIGNING_SECRET`가 필요합니다. 직원별 자발적 self-report 이력, 핵심인력 변경, 보고서 업로드에는 API와 Dashboard에 동일한 `ACTIVITY_ADMIN_TOKEN`을 설정합니다. 전체·부서·직책 타임라인의 집계 최소 인원은 `ACTIVITY_MIN_COHORT_SIZE`로 조정합니다.
+실제 Slack realtime 연결에는 Socket Mode용 `SLACK_APP_TOKEN`, bot용 `SLACK_BOT_TOKEN`, 서명 검증용 `SLACK_SIGNING_SECRET`가 필요합니다. 핵심인력 변경과 보고서 업로드에는 API와 Dashboard에 동일한 `ACTIVITY_ADMIN_TOKEN`을 설정합니다. 부서 타임라인의 집계 최소 인원은 `ACTIVITY_MIN_COHORT_SIZE`로 조정합니다.
 
 운영 확인 예시는 다음과 같습니다.
 

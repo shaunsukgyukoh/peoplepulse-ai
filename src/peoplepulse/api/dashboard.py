@@ -54,10 +54,9 @@ def employees() -> dict:
         "summary": _employee_service().workforce_summary(),
         "signal_policy": {
             "individual_slack_nlp_visible": False,
-            "individual_state_source": "voluntary_self_report_only",
             "key_staff_source": "manual_manager_designation_only",
             "department_minimum_cohort_size": get_settings().activity_min_cohort_size,
-            "timeline_groupings": ["overall", "department", "job_title"],
+            "timeline_grouping": "department",
         },
     }
 
@@ -71,19 +70,6 @@ def update_key_staff(
     _require_admin_token(x_admin_token)
     try:
         return _employee_service().set_key_staff(employee_id_hash, body.is_key_staff)
-    except LookupError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-
-@router.get("/employees/{employee_id_hash}/self-report/trend")
-def employee_self_report_trend(
-    employee_id_hash: str,
-    granularity: Annotated[TrendGranularity, Query()] = "day",
-    x_admin_token: str | None = Header(default=None),
-) -> dict:
-    _require_admin_token(x_admin_token)
-    try:
-        return _employee_service().self_report_trend(employee_id_hash, granularity)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

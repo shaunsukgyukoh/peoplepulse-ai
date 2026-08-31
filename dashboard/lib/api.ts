@@ -23,25 +23,6 @@ export type SlackTrendPoint = {
 
 export type TrendGranularity = "hour" | "day" | "week" | "month";
 
-export type SelfReportTrendPoint = {
-  bucket: string;
-  status: "good" | "okay" | "needs_support" | "prefer_not_to_say";
-  recorded_at: string;
-};
-
-export type SelfReportTrendResponse = {
-  granularity: TrendGranularity;
-  window: string;
-  timezone: string;
-  source: "voluntary_self_report_only";
-  employee: {
-    employee_id_hash: string;
-    employee_name: string;
-    department: string;
-  };
-  points: SelfReportTrendPoint[];
-};
-
 export type DepartmentSignalTrendPoint = {
   department: string;
   bucket: string;
@@ -66,62 +47,13 @@ export type DepartmentSignalTrendResponse = {
   points: DepartmentSignalTrendPoint[];
 };
 
-export type TimelineGrouping = "overall" | "department" | "job_title";
-
-export type TimelineGroup = {
-  label: string;
-  active_employee_count: number;
-  eligible: boolean;
-};
-
-export type WorkSignalTimelinePoint = {
-  group: string;
-  bucket: string;
-  cohort_employee_count: number;
-  message_count: number;
-  work_strain: number;
-  signals: SignalMap;
-};
-
-export type SelfReportTimelinePoint = {
-  group: string;
-  bucket: string;
-  reporting_employee_count: number;
-  status_rates: {
-    good: number;
-    okay: number;
-    needs_support: number;
-    prefer_not_to_say: number;
-  };
-};
-
-export type OrganizationTimelineScope = {
-  group_by: TimelineGrouping;
-  groups: TimelineGroup[];
-  work_signal_points: WorkSignalTimelinePoint[];
-  self_report_points: SelfReportTimelinePoint[];
-};
-
-export type OrganizationSupportTimelineResponse = {
-  granularity: TrendGranularity;
-  window: string;
-  timezone: string;
-  minimum_cohort_size: number;
-  groupings: TimelineGrouping[];
-  sources: {
-    self_report: "voluntary_employee_self_report_only";
-    work_signals: "aggregate_work_communication_signals_only";
-  };
-  source_groupings: {
-    self_report: TimelineGrouping[];
-    work_signals: TimelineGrouping[];
-  };
+export type OrganizationSupportTimelineResponse = DepartmentSignalTrendResponse & {
+  grouping: "department";
   privacy: {
-    employee_first_aggregation: boolean;
     individual_identifiers_returned: false;
+    raw_messages_returned: false;
     psychological_diagnosis: false;
   };
-  scopes: Record<TimelineGrouping, OrganizationTimelineScope>;
 };
 
 export type EmployeeRow = {
@@ -130,8 +62,6 @@ export type EmployeeRow = {
   department: string;
   job_title: string | null;
   is_key_staff: boolean;
-  self_report_status: "good" | "okay" | "needs_support" | "prefer_not_to_say" | null;
-  self_report_updated_at: string | null;
   last_activity_at: string | null;
   message_count_7d: number;
 };
@@ -140,7 +70,6 @@ export type WorkforceSummary = {
   employee_count: number;
   key_staff_count: number;
   departments: Record<string, number>;
-  self_report: Record<string, number>;
 };
 
 export type EmployeesResponse = {
@@ -148,10 +77,9 @@ export type EmployeesResponse = {
   summary: WorkforceSummary;
   signal_policy: {
     individual_slack_nlp_visible: boolean;
-    individual_state_source: string;
     key_staff_source: string;
     department_minimum_cohort_size: number;
-    timeline_groupings: TimelineGrouping[];
+    timeline_grouping: "department";
   };
 };
 
@@ -194,16 +122,6 @@ export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiBase()}${path}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json() as Promise<T>;
-}
-
-export async function getAdminJson<T>(path: string, adminToken: string): Promise<T> {
-  const response = await fetch(`${apiBase()}${path}`, {
-    cache: "no-store",
-    headers: { "X-Admin-Token": adminToken },
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload?.detail ?? `${response.status} ${response.statusText}`);
-  return payload as T;
 }
 
 export async function patchJson<T>(path: string, body: unknown, adminToken: string): Promise<T> {

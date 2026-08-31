@@ -2,15 +2,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-from datetime import datetime, timezone
 from pathlib import Path
 
 import psycopg
 
 from peoplepulse.config import get_settings
 from peoplepulse.security.identifiers import pseudonymize
-
-ALLOWED_SELF_REPORT = {"", "good", "okay", "needs_support", "prefer_not_to_say"}
 
 
 def _to_bool(value: str) -> bool:
@@ -27,7 +24,7 @@ def main() -> None:
         raise SystemExit(f"Employee directory CSV not found: {csv_path}")
 
     settings = get_settings()
-    rows: list[tuple[str, str, str, str | None, bool, bool, str | None, datetime | None]] = []
+    rows: list[tuple[str, str, str, str | None, bool, bool]] = []
 
     with csv_path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -41,14 +38,14 @@ def main() -> None:
             employee_name = (row.get("employee_name") or "").strip()
             department = (row.get("department") or "").strip()
             job_title = (row.get("job_title") or "").strip() or None
-            self_report_status = (row.get("self_report_status") or "").strip()
             if not slack_user_id or not employee_name or not department:
-                raise SystemExit(f"Row {index}: slack_user_id, employee_name and department are required")
-            if self_report_status not in ALLOWED_SELF_REPORT:
-                raise SystemExit(f"Row {index}: unsupported self_report_status={self_report_status!r}")
+                raise SystemExit(
+                    f"Row {index}: slack_user_id, employee_name and department are required"
+                )
 
-            employee_id_hash = pseudonymize(slack_user_id, settings.employee_hash_key, namespace="employee")
-            self_report_value = self_report_status or None
+            employee_id_hash = pseudonymize(
+                slack_user_id, settings.employee_hash_key, namespace="employee"
+            )
             rows.append(
                 (
                     employee_id_hash,
@@ -56,9 +53,8 @@ def main() -> None:
                     department,
                     job_title,
                     _to_bool(row.get("is_key_staff") or ""),
-                    not (row.get("is_active") or "").strip().lower() in {"0", "false", "no", "n"},
-                    self_report_value,
-                    datetime.now(timezone.utc) if self_report_value is not None else None,
+                    (row.get("is_active") or "").strip().lower()
+                    not in {"0", "false", "no", "n"},
                 )
             )
 
@@ -68,20 +64,14 @@ def main() -> None:
                 """
                 INSERT INTO core.employee_directory (
                     employee_id_hash, employee_name, department, job_title,
-                    is_key_staff, is_active, self_report_status, self_report_updated_at, updated_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    is_key_staff, is_active, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, NOW())
                 ON CONFLICT (employee_id_hash) DO UPDATE SET
                     employee_name = EXCLUDED.employee_name,
                     department = EXCLUDED.department,
                     job_title = EXCLUDED.job_title,
                     is_key_staff = EXCLUDED.is_key_staff,
                     is_active = EXCLUDED.is_active,
-                    self_report_status = EXCLUDED.self_report_status,
-                    self_report_updated_at = CASE
-                        WHEN core.employee_directory.self_report_status IS DISTINCT FROM EXCLUDED.self_report_status
-                        THEN EXCLUDED.self_report_updated_at
-                        ELSE core.employee_directory.self_report_updated_at
-                    END,
                     updated_at = NOW()
                 """,
                 rows,
@@ -90,9 +80,8 @@ def main() -> None:
 
     print(f"[OK] loaded {len(rows)} employee directory rows from {csv_path}")
     print("Required CSV columns: slack_user_id,employee_name,department")
-    print("Optional columns: job_title,is_key_staff,is_active,self_report_status")
+    print("Optional columns: job_title,is_key_staff,is_active")
     print("Extra CSV columns such as email/account metadata are safely ignored by this loader.")
-    print("self_report_status is voluntary only: good|okay|needs_support|prefer_not_to_say")
 
 
 if __name__ == "__main__":
