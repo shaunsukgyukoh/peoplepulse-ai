@@ -42,6 +42,24 @@ Slack Events API와 Socket Mode로 message event를 받고 PII masking과 HMAC p
 
 raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 derived workplace signal만 저장하도록 설계했습니다.
 
+### Production dashboard 상태 추세
+
+운영 Dashboard는 동일한 네 가지 시간 범위를 직원별 자발적 상태 이력과 팀별 업무 커뮤니케이션 집계에 적용합니다.
+
+| 선택 | 집계 단위 | 조회 범위 |
+|---|---|---|
+| 시간 | 1시간 | 최근 24시간 |
+| 일 | 1일 | 최근 30일 |
+| 주 | 1주 | 최근 12주 |
+| 월 | 1개월 | 최근 12개월 |
+
+- 직원별 차트는 직원이 직접 제출한 `self_report_status` 이력만 사용하며 관리자 토큰이 있어야 조회할 수 있습니다.
+- Slack NLP는 개인 점수나 심리·정신건강 진단으로 노출하지 않습니다. 업무 커뮤니케이션 신호만 직원별로 먼저 평균한 뒤 팀 평균으로 집계합니다.
+- 각 시간 구간에서 서로 다른 참여 직원이 `ACTIVITY_MIN_COHORT_SIZE` 이상일 때만 팀 점을 반환합니다. 기본값은 5명입니다.
+- 모든 구간은 `Asia/Seoul` 기준이며 Dashboard의 Slack SSE revision이 바뀌면 현재 선택한 팀 추세를 다시 조회합니다.
+
+관련 API는 `GET /api/v1/dashboard/employees/{employee_id_hash}/self-report/trend`와 `GET /api/v1/dashboard/teams/work-signals/trend`이며, `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다.
+
 ### Monthly data pipeline
 
 서로 다른 월간 report format을 parser가 자동 인식하고 Pandera validation과 privacy filtering을 거쳐 monthly feature로 변환합니다.
@@ -193,7 +211,30 @@ Full AI/ML engineering demonstration
 
 `Python, PyTorch, Transformers, KLUE RoBERTa, Redis, PostgreSQL, Pandera, scikit-learn, XGBoost, LightGBM, CatBoost, SHAP, FastAPI, Next.js, React, MLflow, Evidently, Prometheus, Grafana, LangGraph, Ollama, Docker Compose`
 
-## 10. 한계
+## 10. 운영 Dashboard 실행 및 업데이트
+
+Docker Compose stack을 실행한 뒤 production-main migration과 직원 directory를 반영합니다.
+
+```powershell
+docker compose up -d postgres redis slack-listener nlp-worker api dashboard
+python scripts/apply_production_main_migration.py
+python scripts/load_employee_directory.py data/employee_directory.csv
+```
+
+실제 Slack realtime 연결에는 Socket Mode용 `SLACK_APP_TOKEN`, bot용 `SLACK_BOT_TOKEN`, 서명 검증용 `SLACK_SIGNING_SECRET`가 필요합니다. 직원별 자발적 self-report 이력을 보려면 API와 Dashboard에 동일한 `ACTIVITY_ADMIN_TOKEN`을 설정하고, 팀별 집계 최소 인원은 `ACTIVITY_MIN_COHORT_SIZE`로 조정합니다.
+
+운영 확인 예시는 다음과 같습니다.
+
+```powershell
+docker compose ps
+curl.exe -sS http://localhost:8000/health
+curl.exe -sS -N --max-time 4 http://localhost:8000/api/v1/dashboard/slack/stream
+curl.exe -sS "http://localhost:8000/api/v1/dashboard/teams/work-signals/trend?granularity=day"
+```
+
+SSE 명령은 연결을 4초 뒤 의도적으로 종료하므로 `curl` timeout exit code가 발생할 수 있습니다. 응답에 `event:`와 `data:`가 수신되면 stream 전달이 동작한 것입니다.
+
+## 11. 한계
 
 - employee-level ML 결과는 synthetic data에만 해당합니다.
 - causal attrition prediction을 주장하지 않습니다.

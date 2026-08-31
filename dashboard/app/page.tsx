@@ -6,6 +6,7 @@ import type { EChartsOption } from "echarts";
 import EChart from "@/components/EChart";
 import {
   apiBase,
+  getAdminJson,
   getJson,
   patchJson,
   type EmployeeRow,
@@ -13,6 +14,9 @@ import {
   type Overview,
   type SlackLive,
   type SlackTrendPoint,
+  type SelfReportTrendResponse,
+  type TeamSignalTrendResponse,
+  type TrendGranularity,
 } from "@/lib/api";
 
 const SIGNAL_LABEL: Record<string, string> = {
@@ -33,6 +37,17 @@ const SELF_REPORT_LABEL: Record<string, string> = {
   prefer_not_to_say: "응답 안 함",
   not_reported: "미입력",
 };
+
+const TREND_GRANULARITY_OPTIONS: Array<{
+  value: TrendGranularity;
+  label: string;
+  detail: string;
+}> = [
+  { value: "hour", label: "시간", detail: "최근 24시간" },
+  { value: "day", label: "일", detail: "최근 30일" },
+  { value: "week", label: "주", detail: "최근 12주" },
+  { value: "month", label: "월", detail: "최근 12개월" },
+];
 
 function pct(value: number | undefined | null): string {
   return typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "—";
@@ -66,6 +81,89 @@ function signalChart(points: SlackTrendPoint[]): EChartsOption {
   };
 }
 
+function trendBucketLabel(bucket: string, granularity: TrendGranularity): string {
+  const date = new Date(bucket);
+  if (granularity === "hour") {
+    return date.toLocaleString("ko-KR", {
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+    });
+  }
+  if (granularity === "month") {
+    return date.toLocaleDateString("ko-KR", { year: "numeric", month: "short" });
+  }
+  return date.toLocaleDateString("ko-KR", { month: "numeric", day: "numeric" });
+}
+
+function employeeSelfReportTrendChart(
+  result: SelfReportTrendResponse | null,
+  granularity: TrendGranularity,
+): EChartsOption {
+  const points = result?.points ?? [];
+  const statusOrder = ["지원 필요", "보통", "좋음", "응답 안 함"];
+  return {
+    tooltip: { trigger: "axis" },
+    grid: { left: 72, right: 22, top: 24, bottom: 42 },
+    xAxis: {
+      type: "category",
+      data: points.map((point) => trendBucketLabel(point.bucket, granularity)),
+      boundaryGap: false,
+      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
+      axisLabel: { color: "#78958c", hideOverlap: true, rotate: granularity === "hour" ? 25 : 0 },
+    },
+    yAxis: {
+      type: "category",
+      data: statusOrder,
+      axisLabel: { color: "#9bb5ad" },
+      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
+      splitLine: { show: true, lineStyle: { color: "rgba(184,216,207,.07)" } },
+    },
+    series: [
+      {
+        name: "자발적 Self-report",
+        type: "line",
+        step: "end",
+        symbolSize: 8,
+        lineStyle: { width: 3, color: "#8ab9ff" },
+        itemStyle: { color: "#8ab9ff" },
+        data: points.map((point) => SELF_REPORT_LABEL[point.status] ?? point.status),
+      },
+    ],
+  };
+}
+
+function teamSignalTrendChart(
+  result: TeamSignalTrendResponse | null,
+  granularity: TrendGranularity,
+): EChartsOption {
+  const points = result?.points ?? [];
+  return {
+    tooltip: { trigger: "axis", valueFormatter: (value) => `${(Number(value) * 100).toFixed(1)}%` },
+    legend: { data: ["업무 긴장", "긍정 표현", "과부하 표현"], textStyle: { color: "#9bb5ad" } },
+    grid: { left: 44, right: 22, top: 44, bottom: 42 },
+    xAxis: {
+      type: "category",
+      data: points.map((point) => trendBucketLabel(point.bucket, granularity)),
+      boundaryGap: false,
+      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
+      axisLabel: { color: "#78958c", hideOverlap: true, rotate: granularity === "hour" ? 25 : 0 },
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: 1,
+      axisLabel: { color: "#78958c", formatter: (value: number) => `${Math.round(value * 100)}%` },
+      splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
+    },
+    series: [
+      { name: "업무 긴장", type: "line", smooth: true, data: points.map((point) => point.work_strain) },
+      { name: "긍정 표현", type: "line", smooth: true, data: points.map((point) => point.signals.satisfied ?? 0) },
+      { name: "과부하 표현", type: "line", smooth: true, data: points.map((point) => point.signals.overloaded ?? 0) },
+    ],
+  };
+}
+
 function selfReportChart(summary: EmployeesResponse | null): EChartsOption {
   const rows = summary?.summary.self_report ?? {};
   return {
@@ -93,6 +191,7 @@ export default function DashboardPage() {
   const [trend, setTrend] = useState<SlackTrendPoint[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [signalRevision, setSignalRevision] = useState(0);
 
   const [query, setQuery] = useState("");
   const [department, setDepartment] = useState("all");
@@ -101,6 +200,13 @@ export default function DashboardPage() {
   const [sortBy, setSortBy] = useState("starred");
   const [adminToken, setAdminToken] = useState("");
   const [savingStar, setSavingStar] = useState<string | null>(null);
+  const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>("day");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [selectedTeam, setSelectedTeam] = useState("");
+  const [employeeTrend, setEmployeeTrend] = useState<SelfReportTrendResponse | null>(null);
+  const [teamTrend, setTeamTrend] = useState<TeamSignalTrendResponse | null>(null);
+  const [employeeTrendError, setEmployeeTrendError] = useState<string | null>(null);
+  const [teamTrendError, setTeamTrendError] = useState<string | null>(null);
 
   const [reportMonth, setReportMonth] = useState("2026-07");
   const [jobFile, setJobFile] = useState<File | null>(null);
@@ -138,6 +244,7 @@ export default function DashboardPage() {
       const message = event as MessageEvent<string>;
       setLive(JSON.parse(message.data) as SlackLive);
       setConnected(true);
+      setSignalRevision((revision) => revision + 1);
       void getJson<{ points: SlackTrendPoint[] }>("/api/v1/dashboard/slack/trend?minutes=60")
         .then((data) => setTrend(data.points))
         .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
@@ -151,6 +258,76 @@ export default function DashboardPage() {
     () => Array.from(new Set((employeesData?.employees ?? []).map((row) => row.department))).sort(),
     [employeesData],
   );
+
+  useEffect(() => {
+    const employees = employeesData?.employees ?? [];
+    if (!selectedEmployeeId && employees.length) {
+      setSelectedEmployeeId(employees[0].employee_id_hash);
+    }
+    if (!selectedTeam && departments.length) {
+      const minimumCohort = employeesData?.signal_policy.team_minimum_cohort_size ?? 5;
+      const counts = employeesData?.summary.departments ?? {};
+      const eligibleTeams = departments.filter(
+        (item) => item !== "미지정" && (counts[item] ?? 0) >= minimumCohort,
+      );
+      eligibleTeams.sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
+      setSelectedTeam(eligibleTeams[0] ?? departments[0]);
+    }
+  }, [departments, employeesData, selectedEmployeeId, selectedTeam]);
+
+  useEffect(() => {
+    if (!selectedEmployeeId || !adminToken) {
+      setEmployeeTrend(null);
+      setEmployeeTrendError(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      const path = `/api/v1/dashboard/employees/${selectedEmployeeId}/self-report/trend?granularity=${trendGranularity}`;
+      void getAdminJson<SelfReportTrendResponse>(path, adminToken)
+        .then((result) => {
+          if (!cancelled) {
+            setEmployeeTrend(result);
+            setEmployeeTrendError(null);
+          }
+        })
+        .catch((reason) => {
+          if (!cancelled) {
+            setEmployeeTrend(null);
+            setEmployeeTrendError(reason instanceof Error ? reason.message : String(reason));
+          }
+        });
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [adminToken, employeesData, selectedEmployeeId, trendGranularity]);
+
+  useEffect(() => {
+    if (!selectedTeam) {
+      setTeamTrend(null);
+      return;
+    }
+    let cancelled = false;
+    const path = `/api/v1/dashboard/teams/work-signals/trend?granularity=${trendGranularity}&department=${encodeURIComponent(selectedTeam)}`;
+    void getJson<TeamSignalTrendResponse>(path)
+      .then((result) => {
+        if (!cancelled) {
+          setTeamTrend(result);
+          setTeamTrendError(null);
+        }
+      })
+      .catch((reason) => {
+        if (!cancelled) {
+          setTeamTrend(null);
+          setTeamTrendError(reason instanceof Error ? reason.message : String(reason));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedTeam, signalRevision, trendGranularity]);
 
   const filteredEmployees = useMemo(() => {
     const rows = [...(employeesData?.employees ?? [])].filter((row) => {
@@ -224,6 +401,7 @@ export default function DashboardPage() {
         <nav className="nav">
           <a href="#overview">운영 요약</a>
           <a href="#employees">직원 현황</a>
+          <a href="#state-trends">상태 추세</a>
           <a href="#signals">조직 업무 신호</a>
           <a href="#reports">월말 데이터 업데이트</a>
         </nav>
@@ -303,6 +481,72 @@ export default function DashboardPage() {
             </table>
           </div>
           {!filteredEmployees.length && <div className="notice">조건에 맞는 직원이 없습니다. Employee Directory가 비어 있다면 `scripts/load_employee_directory.py`로 먼저 등록하세요.</div>}
+        </section>
+
+        <section id="state-trends" className="section-shell">
+          <div className="section-head trend-section-head">
+            <div>
+              <div className="eyebrow">Time-series Support View</div>
+              <h2>시간·일·주·월 상태 추세</h2>
+              <p>직원별 차트는 자발적으로 제출된 self-report 이력만 사용합니다. 팀 차트는 개인별 Slack 점수를 노출하지 않고, 구간별 참여자가 최소 기준을 충족할 때만 직원 우선 집계된 업무 커뮤니케이션 신호를 표시합니다.</p>
+            </div>
+            <div className="range-tabs" aria-label="추세 집계 단위">
+              {TREND_GRANULARITY_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  key={option.value}
+                  className={trendGranularity === option.value ? "active" : ""}
+                  onClick={() => setTrendGranularity(option.value)}
+                  title={option.detail}
+                >
+                  {option.label}<small>{option.detail}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid-2">
+            <div className="panel trend-panel">
+              <div className="panel-title">직원별 자발적 Self-report<span className="panel-subtitle">admin · employee-provided</span></div>
+              <div className="trend-controls">
+                <select className="field" value={selectedEmployeeId} onChange={(event) => setSelectedEmployeeId(event.target.value)}>
+                  {(employeesData?.employees ?? []).map((employee) => (
+                    <option key={employee.employee_id_hash} value={employee.employee_id_hash}>
+                      {employee.employee_name} · {employee.department}
+                    </option>
+                  ))}
+                </select>
+                <input className="field" type="password" value={adminToken} onChange={(event) => setAdminToken(event.target.value)} placeholder="관리자 토큰 입력" />
+              </div>
+              {!adminToken && <div className="notice">민감한 self-report 이력을 조회하려면 관리자 토큰을 입력하세요.</div>}
+              {employeeTrendError && <div className="notice error">{employeeTrendError}</div>}
+              {adminToken && employeeTrend && !employeeTrend.points.length && <div className="notice">선택한 기간에 자발적 self-report 이력이 없습니다.</div>}
+              {employeeTrend?.points.length ? <EChart option={employeeSelfReportTrendChart(employeeTrend, trendGranularity)} height={330} /> : null}
+            </div>
+
+            <div className="panel trend-panel">
+              <div className="panel-title">팀별 업무 커뮤니케이션 추세<span className="panel-subtitle">anonymous aggregate</span></div>
+              <div className="trend-controls single">
+                <select className="field" value={selectedTeam} onChange={(event) => setSelectedTeam(event.target.value)}>
+                  {departments.map((item) => {
+                    const count = employeesData?.summary.departments[item] ?? 0;
+                    const minimumCohort = employeesData?.signal_policy.team_minimum_cohort_size ?? 5;
+                    return (
+                      <option key={item} value={item} disabled={count < minimumCohort}>
+                        {item} · {count}명{count < minimumCohort ? " (집계 기준 미달)" : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              {teamTrendError && <div className="notice error">{teamTrendError}</div>}
+              {teamTrend && !teamTrend.points.length && (
+                <div className="notice">해당 기간에 최소 {teamTrend.minimum_cohort_size}명 집계 기준을 충족한 구간이 없습니다.</div>
+              )}
+              {teamTrend?.points.length ? <EChart option={teamSignalTrendChart(teamTrend, trendGranularity)} height={330} /> : null}
+              {teamTrend && <div className="trend-policy">직원별 선집계 → 팀 평균 · 최소 {teamTrend.minimum_cohort_size}명 · 원문/개인 점수 비노출</div>}
+            </div>
+          </div>
         </section>
 
         <section id="signals" className="section-shell">

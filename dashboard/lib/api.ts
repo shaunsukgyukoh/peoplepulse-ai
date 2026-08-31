@@ -21,6 +21,51 @@ export type SlackTrendPoint = {
   avg_inference_ms: number;
 };
 
+export type TrendGranularity = "hour" | "day" | "week" | "month";
+
+export type SelfReportTrendPoint = {
+  bucket: string;
+  status: "good" | "okay" | "needs_support" | "prefer_not_to_say";
+  recorded_at: string;
+};
+
+export type SelfReportTrendResponse = {
+  granularity: TrendGranularity;
+  window: string;
+  timezone: string;
+  source: "voluntary_self_report_only";
+  employee: {
+    employee_id_hash: string;
+    employee_name: string;
+    department: string;
+  };
+  points: SelfReportTrendPoint[];
+};
+
+export type TeamSignalTrendPoint = {
+  department: string;
+  bucket: string;
+  cohort_employee_count: number;
+  message_count: number;
+  work_strain: number;
+  signals: SignalMap;
+};
+
+export type TeamSignalTrendResponse = {
+  granularity: TrendGranularity;
+  window: string;
+  timezone: string;
+  minimum_cohort_size: number;
+  aggregation: string;
+  source: "aggregate_work_communication_signals_only";
+  teams: Array<{
+    department: string;
+    active_employee_count: number;
+    eligible: boolean;
+  }>;
+  points: TeamSignalTrendPoint[];
+};
+
 export type EmployeeRow = {
   employee_id_hash: string;
   employee_name: string;
@@ -47,6 +92,7 @@ export type EmployeesResponse = {
     individual_slack_nlp_visible: boolean;
     individual_state_source: string;
     key_staff_source: string;
+    team_minimum_cohort_size: number;
   };
 };
 
@@ -89,6 +135,16 @@ export async function getJson<T>(path: string): Promise<T> {
   const response = await fetch(`${apiBase()}${path}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
   return response.json() as Promise<T>;
+}
+
+export async function getAdminJson<T>(path: string, adminToken: string): Promise<T> {
+  const response = await fetch(`${apiBase()}${path}`, {
+    cache: "no-store",
+    headers: { "X-Admin-Token": adminToken },
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload?.detail ?? `${response.status} ${response.statusText}`);
+  return payload as T;
 }
 
 export async function patchJson<T>(path: string, body: unknown, adminToken: string): Promise<T> {

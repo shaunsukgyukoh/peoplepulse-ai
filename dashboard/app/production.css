@@ -17,6 +17,19 @@
 .state-prefer_not_to_say,
 .state-not_reported { color: var(--muted); }
 
+.trend-section-head { align-items: center; }
+.range-tabs { display: grid; grid-template-columns: repeat(4, minmax(72px, 1fr)); gap: 7px; }
+.range-tabs button { border: 1px solid var(--border); background: rgba(255,255,255,.025); color: var(--muted); border-radius: 10px; padding: 8px 10px; font-weight: 750; }
+.range-tabs button small { display: block; margin-top: 3px; color: inherit; font-size: 9px; font-weight: 500; opacity: .75; }
+.range-tabs button.active { color: var(--accent-2); border-color: rgba(101,230,180,.3); background: rgba(101,230,180,.09); }
+.trend-panel { min-height: 465px; }
+.trend-controls { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 8px; margin-bottom: 10px; }
+.trend-controls.single { grid-template-columns: minmax(0, 1fr); }
+.trend-policy { margin-top: 9px; color: var(--muted); font-size: 10px; text-align: right; }
+
 @media (max-width: 900px) {
   .admin-token-field { max-width: none; width: 100%; }
+  .trend-section-head { align-items: flex-start; }
+  .range-tabs { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .trend-controls { grid-template-columns: 1fr; }
 }

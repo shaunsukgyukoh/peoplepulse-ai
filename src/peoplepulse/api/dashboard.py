@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Header, HTTPException, Query
 from fastapi.sse import EventSourceResponse, ServerSentEvent
@@ -33,6 +34,9 @@ class KeyStaffUpdate(BaseModel):
     is_key_staff: bool
 
 
+TrendGranularity = Literal["hour", "day", "week", "month"]
+
+
 @router.get("/overview")
 def overview() -> dict:
     result = _service().executive_overview()
@@ -52,6 +56,7 @@ def employees() -> dict:
             "individual_slack_nlp_visible": False,
             "individual_state_source": "voluntary_self_report_only",
             "key_staff_source": "manual_manager_designation_only",
+            "team_minimum_cohort_size": get_settings().activity_min_cohort_size,
         },
     }
 
@@ -67,6 +72,30 @@ def update_key_staff(
         return _employee_service().set_key_staff(employee_id_hash, body.is_key_staff)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/employees/{employee_id_hash}/self-report/trend")
+def employee_self_report_trend(
+    employee_id_hash: str,
+    granularity: Annotated[TrendGranularity, Query()] = "day",
+    x_admin_token: str | None = Header(default=None),
+) -> dict:
+    _require_admin_token(x_admin_token)
+    try:
+        return _employee_service().self_report_trend(employee_id_hash, granularity)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/teams/work-signals/trend")
+def team_work_signal_trend(
+    granularity: Annotated[TrendGranularity, Query()] = "day",
+    department: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+) -> dict:
+    return _employee_service().team_work_signal_trend(
+        granularity=granularity,
+        department=department,
+    )
 
 
 @router.get("/slack/live")

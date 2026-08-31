@@ -6,13 +6,18 @@ from peoplepulse.config import get_settings
 
 
 def main() -> None:
-    sql = Path("infra/postgres/migrations/008_production_employee_directory.sql").read_text(encoding="utf-8")
+    migrations = (
+        Path("infra/postgres/migrations/008_production_employee_directory.sql"),
+        Path("infra/postgres/migrations/009_self_report_team_trends.sql"),
+    )
     settings = get_settings()
     with psycopg.connect(settings.postgres_dsn) as conn:
         with conn.cursor() as cur:
-            cur.execute(sql)
+            for migration in migrations:
+                cur.execute(migration.read_text(encoding="utf-8"))
+                print(f"[OK] applied {migration.name}")
         conn.commit()
-    print("[OK] production employee directory migration applied")
+    print("[OK] production dashboard migrations applied")
 
 
 if __name__ == "__main__":
