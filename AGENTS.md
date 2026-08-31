@@ -11,4 +11,4 @@
 
 - Never expose employee-level Slack NLP scores or infer or display an employee's psychological or mental-health state from workplace communications.
 - An employee-level state view may use only a voluntary employee-provided self-report, must require administrative authorization, and must identify that source clearly.
-- Slack-derived workplace signals may be shown only as employee-first cohort aggregates. Suppress every time bucket below `ACTIVITY_MIN_COHORT_SIZE`, which defaults to 5, and never return employee identifiers or raw messages in that aggregate response.
+- Slack-derived workplace signals may be shown only as employee-first aggregates grouped by the organizational-chart `department` in `core.employee_directory`. Suppress every department/time bucket below `ACTIVITY_MIN_COHORT_SIZE`, which defaults to 5, and never return employee identifiers or raw messages in that aggregate response.

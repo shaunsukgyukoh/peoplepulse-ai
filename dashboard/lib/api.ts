@@ -42,7 +42,7 @@ export type SelfReportTrendResponse = {
   points: SelfReportTrendPoint[];
 };
 
-export type TeamSignalTrendPoint = {
+export type DepartmentSignalTrendPoint = {
   department: string;
   bucket: string;
   cohort_employee_count: number;
@@ -51,19 +51,19 @@ export type TeamSignalTrendPoint = {
   signals: SignalMap;
 };
 
-export type TeamSignalTrendResponse = {
+export type DepartmentSignalTrendResponse = {
   granularity: TrendGranularity;
   window: string;
   timezone: string;
   minimum_cohort_size: number;
   aggregation: string;
   source: "aggregate_work_communication_signals_only";
-  teams: Array<{
+  departments: Array<{
     department: string;
     active_employee_count: number;
     eligible: boolean;
   }>;
-  points: TeamSignalTrendPoint[];
+  points: DepartmentSignalTrendPoint[];
 };
 
 export type EmployeeRow = {
@@ -92,7 +92,7 @@ export type EmployeesResponse = {
     individual_slack_nlp_visible: boolean;
     individual_state_source: string;
     key_staff_source: string;
-    team_minimum_cohort_size: number;
+    department_minimum_cohort_size: number;
   };
 };
 

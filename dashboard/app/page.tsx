@@ -15,7 +15,7 @@ import {
   type SlackLive,
   type SlackTrendPoint,
   type SelfReportTrendResponse,
-  type TeamSignalTrendResponse,
+  type DepartmentSignalTrendResponse,
   type TrendGranularity,
 } from "@/lib/api";
 
@@ -133,8 +133,8 @@ function employeeSelfReportTrendChart(
   };
 }
 
-function teamSignalTrendChart(
-  result: TeamSignalTrendResponse | null,
+function departmentSignalTrendChart(
+  result: DepartmentSignalTrendResponse | null,
   granularity: TrendGranularity,
 ): EChartsOption {
   const points = result?.points ?? [];
@@ -202,11 +202,11 @@ export default function DashboardPage() {
   const [savingStar, setSavingStar] = useState<string | null>(null);
   const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>("day");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
-  const [selectedTeam, setSelectedTeam] = useState("");
+  const [selectedDepartment, setSelectedDepartment] = useState("");
   const [employeeTrend, setEmployeeTrend] = useState<SelfReportTrendResponse | null>(null);
-  const [teamTrend, setTeamTrend] = useState<TeamSignalTrendResponse | null>(null);
+  const [departmentTrend, setDepartmentTrend] = useState<DepartmentSignalTrendResponse | null>(null);
   const [employeeTrendError, setEmployeeTrendError] = useState<string | null>(null);
-  const [teamTrendError, setTeamTrendError] = useState<string | null>(null);
+  const [departmentTrendError, setDepartmentTrendError] = useState<string | null>(null);
 
   const [reportMonth, setReportMonth] = useState("2026-07");
   const [jobFile, setJobFile] = useState<File | null>(null);
@@ -264,16 +264,16 @@ export default function DashboardPage() {
     if (!selectedEmployeeId && employees.length) {
       setSelectedEmployeeId(employees[0].employee_id_hash);
     }
-    if (!selectedTeam && departments.length) {
-      const minimumCohort = employeesData?.signal_policy.team_minimum_cohort_size ?? 5;
+    if (!selectedDepartment && departments.length) {
+      const minimumCohort = employeesData?.signal_policy.department_minimum_cohort_size ?? 5;
       const counts = employeesData?.summary.departments ?? {};
-      const eligibleTeams = departments.filter(
+      const eligibleDepartments = departments.filter(
         (item) => item !== "미지정" && (counts[item] ?? 0) >= minimumCohort,
       );
-      eligibleTeams.sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
-      setSelectedTeam(eligibleTeams[0] ?? departments[0]);
+      eligibleDepartments.sort((a, b) => (counts[b] ?? 0) - (counts[a] ?? 0));
+      setSelectedDepartment(eligibleDepartments[0] ?? departments[0]);
     }
-  }, [departments, employeesData, selectedEmployeeId, selectedTeam]);
+  }, [departments, employeesData, selectedDepartment, selectedEmployeeId]);
 
   useEffect(() => {
     if (!selectedEmployeeId || !adminToken) {
@@ -305,29 +305,29 @@ export default function DashboardPage() {
   }, [adminToken, employeesData, selectedEmployeeId, trendGranularity]);
 
   useEffect(() => {
-    if (!selectedTeam) {
-      setTeamTrend(null);
+    if (!selectedDepartment) {
+      setDepartmentTrend(null);
       return;
     }
     let cancelled = false;
-    const path = `/api/v1/dashboard/teams/work-signals/trend?granularity=${trendGranularity}&department=${encodeURIComponent(selectedTeam)}`;
-    void getJson<TeamSignalTrendResponse>(path)
+    const path = `/api/v1/dashboard/departments/work-signals/trend?granularity=${trendGranularity}&department=${encodeURIComponent(selectedDepartment)}`;
+    void getJson<DepartmentSignalTrendResponse>(path)
       .then((result) => {
         if (!cancelled) {
-          setTeamTrend(result);
-          setTeamTrendError(null);
+          setDepartmentTrend(result);
+          setDepartmentTrendError(null);
         }
       })
       .catch((reason) => {
         if (!cancelled) {
-          setTeamTrend(null);
-          setTeamTrendError(reason instanceof Error ? reason.message : String(reason));
+          setDepartmentTrend(null);
+          setDepartmentTrendError(reason instanceof Error ? reason.message : String(reason));
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [selectedTeam, signalRevision, trendGranularity]);
+  }, [selectedDepartment, signalRevision, trendGranularity]);
 
   const filteredEmployees = useMemo(() => {
     const rows = [...(employeesData?.employees ?? [])].filter((row) => {
@@ -488,7 +488,7 @@ export default function DashboardPage() {
             <div>
               <div className="eyebrow">Time-series Support View</div>
               <h2>시간·일·주·월 상태 추세</h2>
-              <p>직원별 차트는 자발적으로 제출된 self-report 이력만 사용합니다. 팀 차트는 개인별 Slack 점수를 노출하지 않고, 구간별 참여자가 최소 기준을 충족할 때만 직원 우선 집계된 업무 커뮤니케이션 신호를 표시합니다.</p>
+              <p>직원별 차트는 자발적으로 제출된 self-report 이력만 사용합니다. 부서 차트는 조직도의 부서 정보를 기준으로 하며, 개인별 Slack 점수를 노출하지 않고 구간별 참여자가 최소 기준을 충족할 때만 직원 우선 집계된 업무 커뮤니케이션 신호를 표시합니다.</p>
             </div>
             <div className="range-tabs" aria-label="추세 집계 단위">
               {TREND_GRANULARITY_OPTIONS.map((option) => (
@@ -525,12 +525,12 @@ export default function DashboardPage() {
             </div>
 
             <div className="panel trend-panel">
-              <div className="panel-title">팀별 업무 커뮤니케이션 추세<span className="panel-subtitle">anonymous aggregate</span></div>
+              <div className="panel-title">조직도상 부서별 업무 커뮤니케이션 추세<span className="panel-subtitle">department aggregate</span></div>
               <div className="trend-controls single">
-                <select className="field" value={selectedTeam} onChange={(event) => setSelectedTeam(event.target.value)}>
+                <select className="field" value={selectedDepartment} onChange={(event) => setSelectedDepartment(event.target.value)}>
                   {departments.map((item) => {
                     const count = employeesData?.summary.departments[item] ?? 0;
-                    const minimumCohort = employeesData?.signal_policy.team_minimum_cohort_size ?? 5;
+                    const minimumCohort = employeesData?.signal_policy.department_minimum_cohort_size ?? 5;
                     return (
                       <option key={item} value={item} disabled={count < minimumCohort}>
                         {item} · {count}명{count < minimumCohort ? " (집계 기준 미달)" : ""}
@@ -539,12 +539,12 @@ export default function DashboardPage() {
                   })}
                 </select>
               </div>
-              {teamTrendError && <div className="notice error">{teamTrendError}</div>}
-              {teamTrend && !teamTrend.points.length && (
-                <div className="notice">해당 기간에 최소 {teamTrend.minimum_cohort_size}명 집계 기준을 충족한 구간이 없습니다.</div>
+              {departmentTrendError && <div className="notice error">{departmentTrendError}</div>}
+              {departmentTrend && !departmentTrend.points.length && (
+                <div className="notice">해당 기간에 최소 {departmentTrend.minimum_cohort_size}명 부서 집계 기준을 충족한 구간이 없습니다.</div>
               )}
-              {teamTrend?.points.length ? <EChart option={teamSignalTrendChart(teamTrend, trendGranularity)} height={330} /> : null}
-              {teamTrend && <div className="trend-policy">직원별 선집계 → 팀 평균 · 최소 {teamTrend.minimum_cohort_size}명 · 원문/개인 점수 비노출</div>}
+              {departmentTrend?.points.length ? <EChart option={departmentSignalTrendChart(departmentTrend, trendGranularity)} height={330} /> : null}
+              {departmentTrend && <div className="trend-policy">조직도 부서 기준 · 직원별 선집계 → 부서 평균 · 최소 {departmentTrend.minimum_cohort_size}명 · 원문/개인 점수 비노출</div>}
             </div>
           </div>
         </section>

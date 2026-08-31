@@ -190,7 +190,7 @@ class EmployeeDashboardService:
             ],
         }
 
-    def team_work_signal_trend(
+    def department_work_signal_trend(
         self,
         *,
         granularity: str,
@@ -205,7 +205,7 @@ class EmployeeDashboardService:
                     "window": window,
                     "timezone": TREND_TIMEZONE,
                     "minimum_cohort_size": minimum_cohort_size,
-                    "teams": [],
+                    "departments": [],
                     "points": [],
                 }
 
@@ -221,7 +221,7 @@ class EmployeeDashboardService:
                     """,
                     (department, department),
                 )
-                team_rows = cursor.fetchall()
+                department_rows = cursor.fetchall()
 
                 if not self._table_exists(connection, "features.message_nlp_signal"):
                     signal_rows: list[dict[str, Any]] = []
@@ -229,7 +229,7 @@ class EmployeeDashboardService:
                     employee_signal_select = ",\n".join(
                         f"AVG(m.{signal})::double precision AS {signal}" for signal in SIGNALS
                     )
-                    team_signal_select = ",\n".join(
+                    department_signal_select = ",\n".join(
                         f"AVG({signal})::double precision AS {signal}" for signal in SIGNALS
                     )
                     strain_expr = " + ".join(WORK_STRAIN_SIGNALS)
@@ -263,7 +263,7 @@ class EmployeeDashboardService:
                             COUNT(*)::bigint AS cohort_employee_count,
                             SUM(message_count)::bigint AS message_count,
                             AVG(work_strain)::double precision AS work_strain,
-                            {team_signal_select}
+                            {department_signal_select}
                         FROM employee_bucket
                         GROUP BY department, bucket
                         HAVING COUNT(*) >= %s
@@ -278,15 +278,15 @@ class EmployeeDashboardService:
             "window": window,
             "timezone": TREND_TIMEZONE,
             "minimum_cohort_size": minimum_cohort_size,
-            "aggregation": "employee_first_then_team_average",
+            "aggregation": "employee_first_then_department_average",
             "source": "aggregate_work_communication_signals_only",
-            "teams": [
+            "departments": [
                 {
                     "department": row["department"],
                     "active_employee_count": int(row["active_employee_count"]),
                     "eligible": int(row["active_employee_count"]) >= minimum_cohort_size,
                 }
-                for row in team_rows
+                for row in department_rows
             ],
             "points": [
                 {

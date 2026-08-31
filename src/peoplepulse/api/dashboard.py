@@ -56,7 +56,7 @@ def employees() -> dict:
             "individual_slack_nlp_visible": False,
             "individual_state_source": "voluntary_self_report_only",
             "key_staff_source": "manual_manager_designation_only",
-            "team_minimum_cohort_size": get_settings().activity_min_cohort_size,
+            "department_minimum_cohort_size": get_settings().activity_min_cohort_size,
         },
     }
 
@@ -87,12 +87,12 @@ def employee_self_report_trend(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.get("/teams/work-signals/trend")
-def team_work_signal_trend(
+@router.get("/departments/work-signals/trend")
+def department_work_signal_trend(
     granularity: Annotated[TrendGranularity, Query()] = "day",
     department: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
 ) -> dict:
-    return _employee_service().team_work_signal_trend(
+    return _employee_service().department_work_signal_trend(
         granularity=granularity,
         department=department,
     )

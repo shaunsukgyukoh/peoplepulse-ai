@@ -44,7 +44,7 @@ raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 deriv
 
 ### Production dashboard 상태 추세
 
-운영 Dashboard는 동일한 네 가지 시간 범위를 직원별 자발적 상태 이력과 팀별 업무 커뮤니케이션 집계에 적용합니다.
+운영 Dashboard는 동일한 네 가지 시간 범위를 직원별 자발적 상태 이력과 조직도상 부서별 업무 커뮤니케이션 집계에 적용합니다. 부서 소속은 `core.employee_directory.department`를 기준으로 하며, Slack workspace의 team ID나 임의 프로젝트 팀을 조직 단위로 사용하지 않습니다.
 
 | 선택 | 집계 단위 | 조회 범위 |
 |---|---|---|
@@ -54,11 +54,11 @@ raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 deriv
 | 월 | 1개월 | 최근 12개월 |
 
 - 직원별 차트는 직원이 직접 제출한 `self_report_status` 이력만 사용하며 관리자 토큰이 있어야 조회할 수 있습니다.
-- Slack NLP는 개인 점수나 심리·정신건강 진단으로 노출하지 않습니다. 업무 커뮤니케이션 신호만 직원별로 먼저 평균한 뒤 팀 평균으로 집계합니다.
-- 각 시간 구간에서 서로 다른 참여 직원이 `ACTIVITY_MIN_COHORT_SIZE` 이상일 때만 팀 점을 반환합니다. 기본값은 5명입니다.
-- 모든 구간은 `Asia/Seoul` 기준이며 Dashboard의 Slack SSE revision이 바뀌면 현재 선택한 팀 추세를 다시 조회합니다.
+- Slack NLP는 개인 점수나 심리·정신건강 진단으로 노출하지 않습니다. 업무 커뮤니케이션 신호만 직원별로 먼저 평균한 뒤 조직도상 부서 평균으로 집계합니다.
+- 각 시간 구간에서 같은 부서의 서로 다른 참여 직원이 `ACTIVITY_MIN_COHORT_SIZE` 이상일 때만 부서 점을 반환합니다. 기본값은 5명입니다.
+- 모든 구간은 `Asia/Seoul` 기준이며 Dashboard의 Slack SSE revision이 바뀌면 현재 선택한 부서 추세를 다시 조회합니다.
 
-관련 API는 `GET /api/v1/dashboard/employees/{employee_id_hash}/self-report/trend`와 `GET /api/v1/dashboard/teams/work-signals/trend`이며, `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다.
+관련 API는 `GET /api/v1/dashboard/employees/{employee_id_hash}/self-report/trend`와 `GET /api/v1/dashboard/departments/work-signals/trend`이며, `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다.
 
 ### Monthly data pipeline
 
@@ -221,7 +221,7 @@ python scripts/apply_production_main_migration.py
 python scripts/load_employee_directory.py data/employee_directory.csv
 ```
 
-실제 Slack realtime 연결에는 Socket Mode용 `SLACK_APP_TOKEN`, bot용 `SLACK_BOT_TOKEN`, 서명 검증용 `SLACK_SIGNING_SECRET`가 필요합니다. 직원별 자발적 self-report 이력을 보려면 API와 Dashboard에 동일한 `ACTIVITY_ADMIN_TOKEN`을 설정하고, 팀별 집계 최소 인원은 `ACTIVITY_MIN_COHORT_SIZE`로 조정합니다.
+실제 Slack realtime 연결에는 Socket Mode용 `SLACK_APP_TOKEN`, bot용 `SLACK_BOT_TOKEN`, 서명 검증용 `SLACK_SIGNING_SECRET`가 필요합니다. 직원별 자발적 self-report 이력을 보려면 API와 Dashboard에 동일한 `ACTIVITY_ADMIN_TOKEN`을 설정하고, 조직도상 부서별 집계 최소 인원은 `ACTIVITY_MIN_COHORT_SIZE`로 조정합니다.
 
 운영 확인 예시는 다음과 같습니다.
 
@@ -229,7 +229,7 @@ python scripts/load_employee_directory.py data/employee_directory.csv
 docker compose ps
 curl.exe -sS http://localhost:8000/health
 curl.exe -sS -N --max-time 4 http://localhost:8000/api/v1/dashboard/slack/stream
-curl.exe -sS "http://localhost:8000/api/v1/dashboard/teams/work-signals/trend?granularity=day"
+curl.exe -sS "http://localhost:8000/api/v1/dashboard/departments/work-signals/trend?granularity=day"
 ```
 
 SSE 명령은 연결을 4초 뒤 의도적으로 종료하므로 `curl` timeout exit code가 발생할 수 있습니다. 응답에 `event:`와 `data:`가 수신되면 stream 전달이 동작한 것입니다.

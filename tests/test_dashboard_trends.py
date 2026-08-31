@@ -29,10 +29,20 @@ def test_trend_window_rejects_unknown_granularity() -> None:
 
 
 def test_self_report_history_migration_has_no_slack_inference_path() -> None:
-    migration = Path("infra/postgres/migrations/009_self_report_team_trends.sql").read_text(
-        encoding="utf-8"
-    )
+    migration = Path(
+        "infra/postgres/migrations/009_self_report_department_trends.sql"
+    ).read_text(encoding="utf-8")
     assert "employee_self_report_history" in migration
     assert "Voluntary employee-provided self-report history" in migration
     assert "message_nlp_signal" not in migration
     assert set(TREND_WINDOWS) == {"hour", "day", "week", "month"}
+
+
+def test_work_signal_trend_is_department_scoped() -> None:
+    service = Path("src/peoplepulse/dashboard/employee_service.py").read_text(encoding="utf-8")
+    api = Path("src/peoplepulse/api/dashboard.py").read_text(encoding="utf-8")
+    assert "department_work_signal_trend" in service
+    assert "d.department" in service
+    assert '"departments": [' in service
+    assert 'router.get("/departments/work-signals/trend")' in api
+    assert "/teams/work-signals/trend" not in api

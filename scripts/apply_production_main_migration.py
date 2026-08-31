@@ -8,7 +8,7 @@ from peoplepulse.config import get_settings
 def main() -> None:
     migrations = (
         Path("infra/postgres/migrations/008_production_employee_directory.sql"),
-        Path("infra/postgres/migrations/009_self_report_team_trends.sql"),
+        Path("infra/postgres/migrations/009_self_report_department_trends.sql"),
     )
     settings = get_settings()
     with psycopg.connect(settings.postgres_dsn) as conn:
