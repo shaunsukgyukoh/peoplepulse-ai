@@ -223,7 +223,7 @@ python scripts/apply_production_main_migration.py
 python scripts/load_employee_directory.py data/employee_directory.csv
 ```
 
-실제 Slack realtime 연결에는 Socket Mode용 `SLACK_APP_TOKEN`, bot용 `SLACK_BOT_TOKEN`, 서명 검증용 `SLACK_SIGNING_SECRET`가 필요합니다. 핵심인력 변경과 보고서 업로드에는 API와 Dashboard에 동일한 `ACTIVITY_ADMIN_TOKEN`을 설정합니다. 부서 타임라인의 집계 최소 인원은 `ACTIVITY_MIN_COHORT_SIZE`로 조정합니다.
+실제 Slack realtime 연결에는 Socket Mode용 `SLACK_APP_TOKEN`, bot용 `SLACK_BOT_TOKEN`, 서명 검증용 `SLACK_SIGNING_SECRET`가 필요합니다. 핵심인력 변경과 보고서 업로드에는 API 서버의 `ACTIVITY_ADMIN_TOKEN`과 같은 값을 Dashboard의 해당 관리자 토큰 입력란에 입력합니다. 월말 데이터 업데이트 폼에도 별도 입력란이 있으며 토큰은 브라우저에 저장하지 않습니다. 부서 타임라인의 집계 최소 인원은 `ACTIVITY_MIN_COHORT_SIZE`로 조정합니다.
 
 운영 확인 예시는 다음과 같습니다.
 

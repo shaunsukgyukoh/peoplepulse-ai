@@ -311,12 +311,21 @@ export default function DashboardPage() {
 
   async function uploadReports(event: FormEvent) {
     event.preventDefault();
-    if (!jobFile || !searchFile || !docFile || !adminToken) return;
+    const missingRequirements = [
+      !adminToken.trim() && "관리자 토큰",
+      !jobFile && "취업사이트 접속내역",
+      !searchFile && "웹 검색 내역",
+      !docFile && "문서활용 내역",
+    ].filter(Boolean);
+    if (!adminToken.trim() || !jobFile || !searchFile || !docFile) {
+      setUploadResult(`필수 항목을 확인하세요: ${missingRequirements.join(", ")}`);
+      return;
+    }
     setUploading(true);
-    setUploadResult("Processing three monthly reports...");
+    setUploadResult("3개 월말 보고서를 검증하고 있습니다...");
     try {
       const data = new FormData();
-      data.append("admin_token", adminToken);
+      data.append("admin_token", adminToken.trim());
       data.append("report_month", reportMonth);
       data.append("files", jobFile);
       data.append("files", searchFile);
@@ -529,12 +538,14 @@ export default function DashboardPage() {
           <div className="section-head"><div><div className="eyebrow">Data Operations</div><h2>월말 데이터 업데이트</h2><p>관리자가 3종 보고서를 한 번에 업로드합니다. 운영 Dashboard에는 모델 성능/실험 지표를 노출하지 않습니다.</p></div></div>
           <form onSubmit={uploadReports}>
             <div className="upload-grid">
-              <label>Report month</label><input className="field" type="month" value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} />
-              <label>취업사이트 접속내역</label><input className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setJobFile(e.target.files?.[0] ?? null)} />
-              <label>웹 검색 내역</label><input className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setSearchFile(e.target.files?.[0] ?? null)} />
-              <label>문서활용 내역</label><input className="field" type="file" accept=".xls,.xlsx" onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} />
+              <label htmlFor="report-admin-token">관리자 토큰</label><input id="report-admin-token" className="field" type="password" autoComplete="off" required value={adminToken} onChange={(e) => setAdminToken(e.target.value)} placeholder="ACTIVITY_ADMIN_TOKEN 값" />
+              <label htmlFor="report-month">Report month</label><input id="report-month" className="field" type="month" required value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} />
+              <label htmlFor="job-report">취업사이트 접속내역</label><input id="job-report" className="field" type="file" accept=".xls,.xlsx" required onChange={(e) => setJobFile(e.target.files?.[0] ?? null)} />
+              <label htmlFor="search-report">웹 검색 내역</label><input id="search-report" className="field" type="file" accept=".xls,.xlsx" required onChange={(e) => setSearchFile(e.target.files?.[0] ?? null)} />
+              <label htmlFor="document-report">문서활용 내역</label><input id="document-report" className="field" type="file" accept=".xls,.xlsx" required onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} />
             </div>
-            <div style={{ marginTop: 14 }}><button className="primary-button" disabled={!adminToken || !jobFile || !searchFile || !docFile || uploading}>{uploading ? "처리 중..." : "3개 보고서 검증 및 처리"}</button></div>
+            <p className="upload-auth-note">API 서버의 <code>ACTIVITY_ADMIN_TOKEN</code>과 같은 값을 입력하세요. 토큰은 브라우저에 저장하지 않습니다.</p>
+            <div style={{ marginTop: 14 }}><button type="submit" className="primary-button" disabled={uploading}>{uploading ? "처리 중..." : "3개 보고서 검증 및 처리"}</button></div>
           </form>
           {uploadResult && <pre className="upload-result" style={{ marginTop: 14 }}>{uploadResult}</pre>}
         </section>

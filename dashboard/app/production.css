@@ -2,6 +2,8 @@
 .employee-toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0 16px; }
 .star-filter { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .admin-token-field { max-width: 320px; }
+.upload-auth-note { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.upload-auth-note code { color: var(--accent-2); }
 .employee-table-wrap table th,
 .employee-table-wrap table td { text-align: left; }
 .employee-table-wrap table th:first-child,
