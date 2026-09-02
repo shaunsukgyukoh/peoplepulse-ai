@@ -4,6 +4,7 @@
 .admin-token-field { max-width: 320px; }
 .upload-auth-note { margin: 10px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .upload-auth-note code { color: var(--accent-2); }
+.metric-value-period { font-size: clamp(17px, 2vw, 25px); }
 .employee-table-wrap table th,
 .employee-table-wrap table td { text-align: left; }
 .employee-table-wrap table th:first-child,

@@ -3,7 +3,7 @@ from __future__ import annotations
 import csv
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +12,7 @@ from psycopg.rows import dict_row
 
 from peoplepulse.config import Settings
 
+# ruff: noqa: E501
 
 SIGNALS = (
     "satisfied",
@@ -164,6 +165,8 @@ class DashboardService:
                     SELECT
                         batch_id::text,
                         report_month::text,
+                        period_start::text,
+                        period_end::text,
                         privacy_mode,
                         status,
                         input_rows,
@@ -278,7 +281,7 @@ class DashboardService:
         nlp = self.nlp_metrics()
         selected_nlp = nlp[0] if nlp else {}
         return {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "slack": slack,
             "latest_report": report,
             "activity": activity,

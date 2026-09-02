@@ -7,10 +7,18 @@ from peoplepulse.activity.processor import MonthlyActivityReportSetProcessor, Re
 from peoplepulse.config import get_settings
 
 parser = argparse.ArgumentParser(
-    description="Upload the three actual-format month-end reports"
+    description="Upload three actual-format reports and infer their analysis period"
 )
-parser.add_argument("--month", required=True, help="YYYY-MM")
-parser.add_argument("files", nargs=3, help="Exactly three .xls/.xlsx reports; order does not matter")
+parser.add_argument(
+    "--month",
+    required=False,
+    help="Deprecated and ignored; the workbook period is detected automatically",
+)
+parser.add_argument(
+    "files",
+    nargs=3,
+    help="Exactly three .xls/.xlsx reports; order does not matter",
+)
 args = parser.parse_args()
 
 uploads = []
@@ -20,6 +28,5 @@ for value in args.files:
 
 processed = MonthlyActivityReportSetProcessor(get_settings()).process_and_persist(
     uploads=uploads,
-    report_month_value=args.month,
 )
 print(processed.result.model_dump_json(indent=2))

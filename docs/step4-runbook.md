@@ -72,18 +72,12 @@ Use all 3 files under:
 data/synthetic/activity/actual-format/
 ```
 
-Report month:
-
-```text
-2026-07
-```
-
-The three file controls can be filled in any order. The backend validates that the request contains exactly one header signature for each report type.
+The three file controls can be filled in any order. No report month is entered manually. The backend validates that the request contains exactly one header signature for each report type, reads the displayed `기간선택` range, and requires the three displayed periods to match. A multi-month range is split into monthly feature rows automatically. If an export has no displayed period, its event-date minimum and maximum are used as a fallback.
 
 ## 6. CLI alternative
 
 ```powershell
-python scripts/upload_activity_report_set.py --month 2026-07 `
+python scripts/upload_activity_report_set.py `
   "data/synthetic/activity/actual-format/Synthetic_취업사이트 접속내역2026-07-01~2026-07-31.xlsx" `
   "data/synthetic/activity/actual-format/Synthetic_웹 검색 내역2026-07-01~2026-07-31.xlsx" `
   "data/synthetic/activity/actual-format/Synthetic_문서활용 내역2026-07-01~2026-07-31.xlsx"

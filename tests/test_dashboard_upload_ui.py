@@ -10,3 +10,6 @@ def test_monthly_upload_form_keeps_submit_actionable_and_explains_auth() -> None
     assert 'disabled={uploading}' in dashboard
     assert "disabled={!adminToken || !jobFile" not in dashboard
     assert dashboard.count('type="file" accept=".xls,.xlsx" required') == 3
+    assert 'id="report-month"' not in dashboard
+    assert 'data.append("report_month"' not in dashboard
+    assert "분석 기간은 엑셀 상단의 표시 기간에서 자동으로 읽으며" in dashboard

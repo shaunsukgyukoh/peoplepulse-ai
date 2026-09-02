@@ -69,6 +69,8 @@ export type Overview = {
   latest_report: null | {
     batch_id: string;
     report_month: string;
+    period_start?: string;
+    period_end?: string;
     privacy_mode: string;
     status: string;
     input_rows: number;

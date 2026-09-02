@@ -17,7 +17,7 @@ class ReportMonth(BaseModel):
     month: int = Field(ge=1, le=12)
 
     @classmethod
-    def parse(cls, value: str) -> "ReportMonth":
+    def parse(cls, value: str) -> ReportMonth:
         try:
             year_s, month_s = value.split("-", maxsplit=1)
             return cls(year=int(year_s), month=int(month_s))
@@ -44,6 +44,10 @@ class UploadedReportSummary(BaseModel):
 
 class ActivityReportSetResult(BaseModel):
     batch_id: str
+    period_start: date
+    period_end: date
+    report_months: list[str]
+    # Compatibility anchor for existing monthly feature-store consumers.
     report_month: str
     privacy_mode: PrivacyMode
     status: str

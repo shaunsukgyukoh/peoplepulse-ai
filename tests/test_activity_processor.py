@@ -1,11 +1,20 @@
 # ruff: noqa: E501
 from collections import Counter
+from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from peoplepulse.activity.features import build_features
 from peoplepulse.activity.privacy import ContentPrivacyFilter
+from peoplepulse.activity.processor import (
+    ActivityUploadError,
+    AnalysisPeriod,
+    MonthlyActivityReportSetProcessor,
+    PreparedReport,
+    ReportUpload,
+)
 from peoplepulse.activity.report_types import ReportType
 from peoplepulse.config import Settings
 
@@ -89,3 +98,94 @@ def test_privacy_filter_returns_only_batch_counts_for_sensitive_content() -> Non
     result = privacy.apply(ReportType.WEB_SEARCH, frame)
     assert len(result.frame) == 1
     assert result.excluded == Counter({"mental_health": 1})
+
+
+def _prepared_reports(
+    reports: dict[ReportType, pd.DataFrame],
+    *,
+    period_start: date,
+    period_end: date,
+) -> list[PreparedReport]:
+    return [
+        PreparedReport(
+            report_type=report_type,
+            filename=f"Synthetic_{report_type.value}.xlsx",
+            file_hash=report_type.value.ljust(64, "0"),
+            input_rows=len(frame),
+            duplicate_rows_removed=0,
+            privacy_excluded_rows=0,
+            frame=frame,
+            period_start=period_start,
+            period_end=period_end,
+            period_declared=True,
+        )
+        for report_type, frame in reports.items()
+    ]
+
+
+def test_multi_month_period_is_split_into_monthly_feature_rows() -> None:
+    reports = _reports()
+    timestamp_columns = {
+        ReportType.JOB_SITE_ACCESS: "access_date",
+        ReportType.WEB_SEARCH: "searched_at",
+        ReportType.DOCUMENT_USAGE: "occurred_at",
+    }
+    for report_type, frame in reports.items():
+        august = frame.copy()
+        timestamp_column = timestamp_columns[report_type]
+        august[timestamp_column] = august[timestamp_column] + pd.DateOffset(months=1)
+        reports[report_type] = pd.concat([frame, august], ignore_index=True)
+
+    processor = MonthlyActivityReportSetProcessor(_settings(activity_privacy_mode="aggregate"))
+    features = processor._build_features_for_period(
+        _prepared_reports(
+            reports,
+            period_start=date(2026, 7, 1),
+            period_end=date(2026, 8, 31),
+        ),
+        AnalysisPeriod(date(2026, 7, 1), date(2026, 8, 31)),
+    )
+
+    assert features.synthetic_employees.empty
+    assert len(features.departments) == 2
+    assert set(features.departments["report_month"]) == {
+        date(2026, 7, 1),
+        date(2026, 8, 1),
+    }
+    assert features.departments["job_site_active_days"].max() <= 31
+
+
+def test_mismatched_declared_workbook_periods_are_rejected() -> None:
+    reports = _prepared_reports(
+        _reports(),
+        period_start=date(2026, 7, 1),
+        period_end=date(2026, 7, 31),
+    )
+    reports[0] = PreparedReport(
+        **{
+            **reports[0].__dict__,
+            "period_start": date(2026, 6, 1),
+            "period_end": date(2026, 7, 31),
+        }
+    )
+
+    with pytest.raises(ActivityUploadError, match="workbook periods must match"):
+        MonthlyActivityReportSetProcessor._resolve_analysis_period(reports)
+
+
+def test_actual_format_workbooks_supply_their_own_period() -> None:
+    root = Path("data/synthetic/activity/actual-format")
+    paths = sorted(root.glob("*.xlsx"))
+    processor = MonthlyActivityReportSetProcessor(_settings(activity_privacy_mode="aggregate"))
+
+    prepared = [
+        processor._prepare_one(ReportUpload(path.name, path.read_bytes()))[0]
+        for path in paths
+    ]
+
+    assert len(prepared) == 3
+    assert {report.report_type for report in prepared} == set(ReportType)
+    assert {
+        (report.period_start, report.period_end, report.period_declared)
+        for report in prepared
+    } == {(date(2026, 7, 1), date(2026, 7, 31), True)}

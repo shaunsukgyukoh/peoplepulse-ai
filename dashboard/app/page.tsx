@@ -212,7 +212,6 @@ export default function DashboardPage() {
   const [timelineData, setTimelineData] = useState<OrganizationSupportTimelineResponse | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
-  const [reportMonth, setReportMonth] = useState("2026-07");
   const [jobFile, setJobFile] = useState<File | null>(null);
   const [searchFile, setSearchFile] = useState<File | null>(null);
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -322,11 +321,10 @@ export default function DashboardPage() {
       return;
     }
     setUploading(true);
-    setUploadResult("3개 월말 보고서를 검증하고 있습니다...");
+    setUploadResult("3개 활동 보고서의 표시 기간과 내용을 검증하고 있습니다...");
     try {
       const data = new FormData();
       data.append("admin_token", adminToken.trim());
-      data.append("report_month", reportMonth);
       data.append("files", jobFile);
       data.append("files", searchFile);
       data.append("files", docFile);
@@ -343,6 +341,9 @@ export default function DashboardPage() {
   }
 
   const workforce = employeesData?.summary ?? overview?.workforce;
+  const latestReportPeriod = overview?.latest_report?.period_start && overview.latest_report.period_end
+    ? `${overview.latest_report.period_start} – ${overview.latest_report.period_end}`
+    : overview?.latest_report?.report_month ?? "—";
   const timelineAxisBuckets = timelineData ? timelineBucketAxis(timelineData) : [];
   const timelineSignalLabel = TIMELINE_SIGNAL_OPTIONS.find(
     (option) => option.value === timelineSignal,
@@ -390,7 +391,7 @@ export default function DashboardPage() {
           <div className="grid-3">
             <div className="metric-card metric-card-accent"><div className="metric-label">재직 직원</div><div className="metric-value">{workforce?.employee_count ?? 0}</div><div className="metric-detail">Employee Directory 기준</div></div>
             <div className="metric-card"><div className="metric-label">핵심인력</div><div className="metric-value">★ {workforce?.key_staff_count ?? 0}</div><div className="metric-detail">관리자가 수동 지정</div></div>
-            <div className="metric-card"><div className="metric-label">최근 월말 데이터</div><div className="metric-value">{overview?.latest_report?.report_month ?? "—"}</div><div className="metric-detail">3종 보고서 처리 현황</div></div>
+            <div className="metric-card"><div className="metric-label">최근 분석 기간</div><div className="metric-value metric-value-period">{latestReportPeriod}</div><div className="metric-detail">엑셀 표시 기간 자동 인식</div></div>
           </div>
         </section>
 
@@ -535,16 +536,15 @@ export default function DashboardPage() {
         </section>
 
         <section id="reports" className="section-shell">
-          <div className="section-head"><div><div className="eyebrow">Data Operations</div><h2>월말 데이터 업데이트</h2><p>관리자가 3종 보고서를 한 번에 업로드합니다. 운영 Dashboard에는 모델 성능/실험 지표를 노출하지 않습니다.</p></div></div>
+          <div className="section-head"><div><div className="eyebrow">Data Operations</div><h2>월말 데이터 업데이트</h2><p>관리자가 같은 기간으로 내보낸 3종 보고서를 한 번에 업로드합니다. 분석 기간은 엑셀 상단의 표시 기간에서 자동으로 읽으며 여러 달이면 월별 feature로 나눠 처리합니다.</p></div></div>
           <form onSubmit={uploadReports}>
             <div className="upload-grid">
               <label htmlFor="report-admin-token">관리자 토큰</label><input id="report-admin-token" className="field" type="password" autoComplete="off" required value={adminToken} onChange={(e) => setAdminToken(e.target.value)} placeholder="ACTIVITY_ADMIN_TOKEN 값" />
-              <label htmlFor="report-month">Report month</label><input id="report-month" className="field" type="month" required value={reportMonth} onChange={(e) => setReportMonth(e.target.value)} />
               <label htmlFor="job-report">취업사이트 접속내역</label><input id="job-report" className="field" type="file" accept=".xls,.xlsx" required onChange={(e) => setJobFile(e.target.files?.[0] ?? null)} />
               <label htmlFor="search-report">웹 검색 내역</label><input id="search-report" className="field" type="file" accept=".xls,.xlsx" required onChange={(e) => setSearchFile(e.target.files?.[0] ?? null)} />
               <label htmlFor="document-report">문서활용 내역</label><input id="document-report" className="field" type="file" accept=".xls,.xlsx" required onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} />
             </div>
-            <p className="upload-auth-note">API 서버의 <code>ACTIVITY_ADMIN_TOKEN</code>과 같은 값을 입력하세요. 토큰은 브라우저에 저장하지 않습니다.</p>
+            <p className="upload-auth-note">API 서버의 <code>ACTIVITY_ADMIN_TOKEN</code>과 같은 값을 입력하세요. 토큰은 브라우저에 저장하지 않습니다. 보고 월은 입력하지 않으며 세 엑셀의 표시 기간이 같아야 합니다.</p>
             <div style={{ marginTop: 14 }}><button type="submit" className="primary-button" disabled={uploading}>{uploading ? "처리 중..." : "3개 보고서 검증 및 처리"}</button></div>
           </form>
           {uploadResult && <pre className="upload-result" style={{ marginTop: 14 }}>{uploadResult}</pre>}

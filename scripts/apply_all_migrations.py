@@ -12,6 +12,7 @@ MIGRATIONS = [
     "005_step4_actual_report_set.sql",
     "006_step5_feature_store.sql",
     "007_step6_synthetic_ml.sql",
+    "009_activity_report_periods.sql",
 ]
 
 

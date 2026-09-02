@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date
 
 import pandas as pd
 import pandera.errors
@@ -19,6 +20,12 @@ _DURATION_RE = re.compile(
     r"^\s*(?:(?P<hours>\d+(?:\.\d+)?)\s*시간)?\s*"
     r"(?:(?P<minutes>\d+(?:\.\d+)?)\s*분)?\s*"
     r"(?:(?P<seconds>\d+(?:\.\d+)?)\s*초)?\s*$"
+)
+
+_PERIOD_DATE_RE = re.compile(
+    r"(?<!\d)(?P<year>20\d{2})\s*(?:[-./]|년)\s*"
+    r"(?P<month>\d{1,2})\s*(?:[-./]|월)\s*"
+    r"(?P<day>\d{1,2})\s*일?(?!\d)"
 )
 
 
@@ -52,6 +59,38 @@ class NormalizedReport:
     report_type: ReportType
     frame: pd.DataFrame
     duplicate_rows_removed: int
+    period_start: date | None = None
+    period_end: date | None = None
+
+
+def extract_report_period(summary_rows: pd.DataFrame) -> tuple[date, date] | None:
+    """Read the export's displayed period without relying on a fixed cell."""
+    texts = [
+        str(value).strip()
+        for value in summary_rows.to_numpy().ravel()
+        if value is not None and not pd.isna(value) and str(value).strip()
+    ]
+    period_texts = [text for text in texts if "기간" in text]
+    candidates = [*(period_texts or texts), " ".join(texts)]
+    for text in candidates:
+        matches = list(_PERIOD_DATE_RE.finditer(text))
+        if len(matches) < 2:
+            continue
+        try:
+            dates = [
+                date(
+                    int(match.group("year")),
+                    int(match.group("month")),
+                    int(match.group("day")),
+                )
+                for match in matches[:2]
+            ]
+        except ValueError as exc:
+            raise ReportNormalizationError("Workbook period contains an invalid date") from exc
+        if dates[1] < dates[0]:
+            raise ReportNormalizationError("Workbook period end is earlier than its start")
+        return dates[0], dates[1]
+    return None
 
 
 def _extract_data(raw: pd.DataFrame, detected: DetectedReport) -> pd.DataFrame:
@@ -109,6 +148,7 @@ def _clean_optional_text(frame: pd.DataFrame, columns: list[str]) -> pd.DataFram
 def normalize_report(raw: pd.DataFrame, detected: DetectedReport) -> NormalizedReport:
     data = _extract_data(raw, detected)
     mapping = _column_map(list(data.columns))
+    report_period = extract_report_period(detected.summary_rows)
 
     if detected.report_type == ReportType.JOB_SITE_ACCESS:
         frame = pd.DataFrame(
@@ -134,6 +174,7 @@ def normalize_report(raw: pd.DataFrame, detected: DetectedReport) -> NormalizedR
             detected.report_type,
             _validate(JobSiteAccessSchema, frame),
             before - len(frame),
+            *(report_period or (None, None)),
         )
 
     if detected.report_type == ReportType.WEB_SEARCH:
@@ -160,6 +201,7 @@ def normalize_report(raw: pd.DataFrame, detected: DetectedReport) -> NormalizedR
             detected.report_type,
             _validate(WebSearchSchema, frame),
             before - len(frame),
+            *(report_period or (None, None)),
         )
 
     if detected.report_type == ReportType.DOCUMENT_USAGE:
@@ -186,6 +228,7 @@ def normalize_report(raw: pd.DataFrame, detected: DetectedReport) -> NormalizedR
             detected.report_type,
             _validate(DocumentUsageSchema, frame),
             before - len(frame),
+            *(report_period or (None, None)),
         )
 
     raise ReportNormalizationError("Unsupported report type")

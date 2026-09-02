@@ -48,7 +48,7 @@ def main() -> None:
         for value in ACTIVITY_FILES:
             if not Path(value).exists():
                 raise FileNotFoundError(value)
-        run("scripts/upload_activity_report_set.py", "--month", MONTH, *ACTIVITY_FILES)
+        run("scripts/upload_activity_report_set.py", *ACTIVITY_FILES)
     else:
         print(f"[SKIP] synthetic monthly activity already exists rows={activity_count}")
 

@@ -6,7 +6,7 @@ import io
 import uuid
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -14,8 +14,12 @@ import psycopg
 from psycopg.errors import UniqueViolation
 
 from peoplepulse.activity.features import FeatureFrames, build_features
-from peoplepulse.activity.models import ActivityReportSetResult, ReportMonth, UploadedReportSummary
-from peoplepulse.activity.normalizers import NormalizedReport, ReportNormalizationError, normalize_report
+from peoplepulse.activity.models import ActivityReportSetResult, UploadedReportSummary
+from peoplepulse.activity.normalizers import (
+    NormalizedReport,
+    ReportNormalizationError,
+    normalize_report,
+)
 from peoplepulse.activity.privacy import ContentPrivacyFilter
 from peoplepulse.activity.report_types import ReportDetectionError, ReportType, detect_report_type
 from peoplepulse.config import Settings
@@ -40,6 +44,38 @@ class PreparedReport:
     duplicate_rows_removed: int
     privacy_excluded_rows: int
     frame: pd.DataFrame
+    period_start: date
+    period_end: date
+    period_declared: bool
+
+
+@dataclass(frozen=True)
+class AnalysisPeriod:
+    start: date
+    end: date
+
+    @property
+    def month_starts(self) -> list[date]:
+        months: list[date] = []
+        current = date(self.start.year, self.start.month, 1)
+        final = date(self.end.year, self.end.month, 1)
+        while current <= final:
+            months.append(current)
+            current = _next_month(current)
+        return months
+
+
+_TIMESTAMP_COLUMNS = {
+    ReportType.JOB_SITE_ACCESS: "access_date",
+    ReportType.WEB_SEARCH: "searched_at",
+    ReportType.DOCUMENT_USAGE: "occurred_at",
+}
+
+
+def _next_month(value: date) -> date:
+    if value.month == 12:
+        return date(value.year + 1, 1, 1)
+    return date(value.year, value.month + 1, 1)
 
 
 @dataclass(frozen=True)
@@ -102,31 +138,37 @@ class MonthlyActivityReportSetProcessor:
             raise ActivityUploadError(f"Unable to read workbook: {upload.filename}") from exc
 
     @staticmethod
-    def _validate_month(report_type: ReportType, frame: pd.DataFrame, report_month: ReportMonth) -> None:
-        timestamp_column = {
-            ReportType.JOB_SITE_ACCESS: "access_date",
-            ReportType.WEB_SEARCH: "searched_at",
-            ReportType.DOCUMENT_USAGE: "occurred_at",
-        }[report_type]
+    def _event_period(
+        report_type: ReportType,
+        frame: pd.DataFrame,
+        declared_period: tuple[date, date] | None,
+    ) -> tuple[date, date]:
+        timestamp_column = _TIMESTAMP_COLUMNS[report_type]
         timestamp = pd.to_datetime(frame[timestamp_column], errors="coerce")
         invalid = timestamp.isna()
         if invalid.any():
             raise ActivityUploadError(
                 f"{report_type.value}: {int(invalid.sum())} rows contain invalid date/time values"
             )
-        match = (timestamp.dt.year == report_month.year) & (
-            timestamp.dt.month == report_month.month
-        )
+        if timestamp.empty:
+            raise ActivityUploadError(f"{report_type.value}: report contains no activity rows")
+        event_start = timestamp.min().date()
+        event_end = timestamp.max().date()
+        if declared_period is None:
+            return event_start, event_end
+        period_start, period_end = declared_period
+        event_dates = timestamp.dt.date
+        match = (event_dates >= period_start) & (event_dates <= period_end)
         if not bool(match.all()):
             raise ActivityUploadError(
                 f"{report_type.value}: {int((~match).sum())} rows are outside "
-                f"report_month={report_month.value}"
+                f"the workbook period={period_start.isoformat()}..{period_end.isoformat()}"
             )
+        return period_start, period_end
 
     def _prepare_one(
         self,
         upload: ReportUpload,
-        report_month: ReportMonth,
     ) -> tuple[PreparedReport, Counter[str]]:
         raw = self._read_raw_excel(upload)
         try:
@@ -135,7 +177,16 @@ class MonthlyActivityReportSetProcessor:
         except (ReportDetectionError, ReportNormalizationError) as exc:
             raise ActivityUploadError(f"{upload.filename}: {exc}") from exc
 
-        self._validate_month(normalized.report_type, normalized.frame, report_month)
+        declared_period = (
+            (normalized.period_start, normalized.period_end)
+            if normalized.period_start is not None and normalized.period_end is not None
+            else None
+        )
+        period_start, period_end = self._event_period(
+            normalized.report_type,
+            normalized.frame,
+            declared_period,
+        )
         privacy = self.privacy_filter.apply(normalized.report_type, normalized.frame)
         prepared = PreparedReport(
             report_type=normalized.report_type,
@@ -145,8 +196,97 @@ class MonthlyActivityReportSetProcessor:
             duplicate_rows_removed=normalized.duplicate_rows_removed,
             privacy_excluded_rows=sum(privacy.excluded.values()),
             frame=privacy.frame,
+            period_start=period_start,
+            period_end=period_end,
+            period_declared=declared_period is not None,
         )
         return prepared, privacy.excluded
+
+    @staticmethod
+    def _resolve_analysis_period(reports: list[PreparedReport]) -> AnalysisPeriod:
+        declared = {
+            (report.period_start, report.period_end)
+            for report in reports
+            if report.period_declared
+        }
+        if len(declared) > 1:
+            details = ", ".join(
+                f"{report.report_type.value}="
+                f"{report.period_start.isoformat()}..{report.period_end.isoformat()}"
+                for report in sorted(reports, key=lambda item: item.report_type.value)
+            )
+            raise ActivityUploadError(
+                "The three workbook periods must match before they can be analyzed together "
+                f"({details})"
+            )
+        if declared:
+            period_start, period_end = next(iter(declared))
+            outside = [
+                report
+                for report in reports
+                if not report.period_declared
+                and (report.period_start < period_start or report.period_end > period_end)
+            ]
+            if outside:
+                raise ActivityUploadError(
+                    "Activity dates in a workbook without period metadata fall outside the "
+                    "period declared by the other workbooks"
+                )
+            return AnalysisPeriod(period_start, period_end)
+        return AnalysisPeriod(
+            min(report.period_start for report in reports),
+            max(report.period_end for report in reports),
+        )
+
+    def _build_features_for_period(
+        self,
+        reports: list[PreparedReport],
+        period: AnalysisPeriod,
+    ) -> FeatureFrames:
+        department_frames: list[pd.DataFrame] = []
+        employee_frames: list[pd.DataFrame] = []
+        suppressed_departments = 0
+        for report_month in period.month_starts:
+            next_month = _next_month(report_month)
+            monthly_reports: dict[ReportType, pd.DataFrame] = {}
+            for report in reports:
+                timestamps = pd.to_datetime(
+                    report.frame[_TIMESTAMP_COLUMNS[report.report_type]],
+                    errors="coerce",
+                )
+                monthly_reports[report.report_type] = report.frame.loc[
+                    (timestamps >= pd.Timestamp(report_month))
+                    & (timestamps < pd.Timestamp(next_month))
+                ].copy()
+            if not any(not frame.empty for frame in monthly_reports.values()):
+                continue
+            try:
+                monthly_features = build_features(
+                    monthly_reports,
+                    report_month=report_month,
+                    settings=self.settings,
+                    source_filenames=[report.filename for report in reports],
+                )
+            except ValueError as exc:
+                raise ActivityUploadError(str(exc)) from exc
+            if not monthly_features.departments.empty:
+                department_frames.append(monthly_features.departments)
+            if not monthly_features.synthetic_employees.empty:
+                employee_frames.append(monthly_features.synthetic_employees)
+            suppressed_departments += monthly_features.suppressed_departments
+        return FeatureFrames(
+            departments=(
+                pd.concat(department_frames, ignore_index=True)
+                if department_frames
+                else pd.DataFrame()
+            ),
+            synthetic_employees=(
+                pd.concat(employee_frames, ignore_index=True)
+                if employee_frames
+                else pd.DataFrame()
+            ),
+            suppressed_departments=suppressed_departments,
+        )
 
     @staticmethod
     def _report_set_hash(reports: list[PreparedReport]) -> str:
@@ -212,7 +352,7 @@ class MonthlyActivityReportSetProcessor:
         self,
         *,
         batch_id: str,
-        report_month: ReportMonth,
+        period: AnalysisPeriod,
         reports: list[PreparedReport],
         report_set_hash: str,
         exclusions: Counter[str],
@@ -221,38 +361,46 @@ class MonthlyActivityReportSetProcessor:
         input_rows = sum(report.input_rows for report in reports)
         duplicates = sum(report.duplicate_rows_removed for report in reports)
         privacy_excluded = sum(report.privacy_excluded_rows for report in reports)
+        report_month = period.month_starts[0]
+        final_report_month = period.month_starts[-1]
 
         with psycopg.connect(self.settings.postgres_dsn) as conn:
             try:
                 with conn.cursor() as cur:
                     cur.execute(
                         "UPDATE audit.activity_report_set_batch SET status='superseded' "
-                        "WHERE report_month=%s AND privacy_mode=%s AND status='completed'",
-                        (report_month.first_day, self.settings.activity_privacy_mode),
+                        "WHERE period_start=%s AND period_end=%s "
+                        "AND privacy_mode=%s AND status='completed'",
+                        (period.start, period.end, self.settings.activity_privacy_mode),
                     )
                     if self.settings.activity_privacy_mode == "aggregate":
                         cur.execute(
-                            "DELETE FROM features.department_monthly_activity WHERE report_month=%s",
-                            (report_month.first_day,),
+                            "DELETE FROM features.department_monthly_activity "
+                            "WHERE report_month BETWEEN %s AND %s",
+                            (report_month, final_report_month),
                         )
                     else:
                         cur.execute(
-                            "DELETE FROM features.synthetic_employee_monthly_activity WHERE report_month=%s",
-                            (report_month.first_day,),
+                            "DELETE FROM features.synthetic_employee_monthly_activity "
+                            "WHERE report_month BETWEEN %s AND %s",
+                            (report_month, final_report_month),
                         )
 
                     cur.execute(
                         """
                         INSERT INTO audit.activity_report_set_batch (
-                            batch_id, report_month, privacy_mode, report_set_sha256, status,
+                            batch_id, report_month, period_start, period_end,
+                            privacy_mode, report_set_sha256, status,
                             policy_version, input_rows, duplicate_rows_removed,
                             privacy_excluded_rows, department_feature_rows,
                             synthetic_employee_feature_rows, suppressed_departments
-                        ) VALUES (%s,%s,%s,%s,'completed',%s,%s,%s,%s,%s,%s,%s)
+                        ) VALUES (%s,%s,%s,%s,%s,%s,'completed',%s,%s,%s,%s,%s,%s,%s)
                         """,
                         (
                             batch_id,
-                            report_month.first_day,
+                            report_month,
+                            period.start,
+                            period.end,
                             self.settings.activity_privacy_mode,
                             report_set_hash,
                             self.privacy_filter.version,
@@ -318,42 +466,32 @@ class MonthlyActivityReportSetProcessor:
             except UniqueViolation as exc:
                 conn.rollback()
                 raise ActivityUploadError(
-                    "This exact three-report set has already been uploaded for the month"
+                    "This exact three-report set has already been uploaded for the period"
                 ) from exc
 
     def process_and_persist(
         self,
         *,
         uploads: list[ReportUpload],
-        report_month_value: str,
+        report_month_value: str | None = None,
     ) -> ProcessedReportSet:
         if len(uploads) != 3:
             raise ActivityUploadError("Exactly three files must be uploaded together")
-        report_month = ReportMonth.parse(report_month_value)
         reports: list[PreparedReport] = []
         exclusions: Counter[str] = Counter()
         for upload in uploads:
-            report, excluded = self._prepare_one(upload, report_month)
+            report, excluded = self._prepare_one(upload)
             reports.append(report)
             exclusions.update(excluded)
         self._ensure_complete_set(reports)
-
-        by_type = {report.report_type: report.frame for report in reports}
-        try:
-            features = build_features(
-                by_type,
-                report_month=report_month.first_day,
-                settings=self.settings,
-                source_filenames=[report.filename for report in reports],
-            )
-        except ValueError as exc:
-            raise ActivityUploadError(str(exc)) from exc
+        period = self._resolve_analysis_period(reports)
+        features = self._build_features_for_period(reports, period)
 
         batch_id = str(uuid.uuid4())
         report_set_hash = self._report_set_hash(reports)
         self._persist(
             batch_id=batch_id,
-            report_month=report_month,
+            period=period,
             reports=reports,
             report_set_hash=report_set_hash,
             exclusions=exclusions,
@@ -373,7 +511,10 @@ class MonthlyActivityReportSetProcessor:
         ]
         result = ActivityReportSetResult(
             batch_id=batch_id,
-            report_month=report_month.value,
+            period_start=period.start,
+            period_end=period.end,
+            report_months=[value.strftime("%Y-%m") for value in period.month_starts],
+            report_month=period.month_starts[0].strftime("%Y-%m"),
             privacy_mode=self.settings.activity_privacy_mode,
             status="completed",
             reports=summaries,
