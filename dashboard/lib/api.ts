@@ -1,26 +1,5 @@
 export type SignalMap = Record<string, number>;
 
-export type SlackLive = {
-  message_count: number;
-  avg_inference_ms: number;
-  work_strain: number;
-  signals: SignalMap;
-  model_name: string | null;
-  model_device: string | null;
-  last_message_at: string | null;
-};
-
-export type SlackTrendPoint = {
-  bucket: string;
-  message_count: number;
-  satisfied: number;
-  frustrated: number;
-  overloaded: number;
-  disengaged: number;
-  work_strain: number;
-  avg_inference_ms: number;
-};
-
 export type TrendGranularity = "hour" | "day" | "week" | "month";
 
 export type DepartmentSignalTrendPoint = {
@@ -39,6 +18,7 @@ export type DepartmentSignalTrendResponse = {
   minimum_cohort_size: number;
   aggregation: string;
   source: "aggregate_work_communication_signals_only";
+  suppressed_department_count: number;
   departments: Array<{
     department: string;
     active_employee_count: number;
@@ -85,7 +65,6 @@ export type EmployeesResponse = {
 
 export type Overview = {
   generated_at: string;
-  slack: SlackLive;
   workforce: WorkforceSummary;
   latest_report: null | {
     batch_id: string;

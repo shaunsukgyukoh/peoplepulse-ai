@@ -44,22 +44,24 @@ raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 deriv
 
 ### Production dashboard 부서 업무 신호 타임라인
 
-운영 Dashboard의 핵심 화면은 조직도상 부서의 업무 커뮤니케이션 신호를 동일한 시간축의 heatmap으로 비교합니다. 먼저 변화 시점을 찾고 어느 부서 구간에서 나타났는지 확인하도록 구성했습니다.
+운영 Dashboard의 핵심 화면은 조직도상 부서의 업무 커뮤니케이션 신호를 동일한 시간축에서 비교합니다. heatmap으로 변화 시점과 부서 차이를 찾고, 전체 표시 가능 부서 line chart와 부서별 최신 구간 카드로 각 부서를 함께 확인합니다. 여기서 “전체”는 조직 전체 평균이 아니라 개인정보 기준을 통과한 모든 부서의 동시 비교를 뜻합니다.
 
 | 선택 | 집계 단위 | 조회 범위 |
 |---|---|---|
-| 시간 | 1시간 | 최근 24시간 |
-| 일 | 1일 | 최근 30일 |
-| 주 | 1주 | 최근 12주 |
-| 월 | 1개월 | 최근 12개월 |
+| 60분 | 1시간 | 최근 24시간 |
+| 일별 | 1일 | 최근 30일 |
+| 주간 | 1주 | 최근 12주 |
+| 월간 | 1개월 | 최근 12개월 |
 
 - Production Dashboard와 직원 directory CSV 입력은 self-report를 사용하지 않습니다. 과거 DB 컬럼이나 이력 테이블은 자동 삭제하지 않지만 API, UI, loader에서는 읽거나 쓰지 않습니다.
 - Slack derived signal은 직원별로 먼저 평균한 뒤 `core.employee_directory.department`별로만 집계합니다. 전체·직책 단위 Slack 신호, Slack workspace team ID, 프로젝트 팀은 제공하지 않습니다.
 - 부서·시간 구간마다 서로 다른 직원이 `ACTIVITY_MIN_COHORT_SIZE` 이상일 때만 반환하며, 5명 미만 부서는 명칭과 인원 메타데이터도 응답에서 제외합니다. 기본값은 5명입니다.
+- 업무 긴장 종합, 긍정·중립·답답함·강한 부정·불만·과부하·갈등·몰입 저하 표현을 선택해 같은 heatmap, line chart, 부서 카드에 적용할 수 있습니다.
+- 최소 인원 기준은 Dashboard에서 해제할 수 없습니다. API는 미달 부서 이름 대신 `suppressed_department_count`만 반환해 비공개 부서 수를 안내합니다.
 - 모든 구간은 `Asia/Seoul` 기준이며 Slack SSE revision이 바뀌면 현재 부서 타임라인을 다시 조회합니다.
 - Slack 신호는 심리 상태나 정신건강 진단이 아니라 업무 표현의 집계입니다. 개인별 Slack NLP 점수는 API와 Dashboard 모두에서 노출하지 않습니다.
 
-통합 API는 `GET /api/v1/dashboard/organization/support-timeline`이며 `grouping=department`, 최소 인원 기준을 통과한 `departments`, 부서별 `points`, 개인정보 비노출 정책을 반환합니다. `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다. 기존 `GET /api/v1/dashboard/departments/work-signals/trend`도 호환성을 위해 유지합니다.
+통합 API는 `GET /api/v1/dashboard/organization/support-timeline`이며 `grouping=department`, 최소 인원 기준을 통과한 `departments`, 부서별 `points`, `suppressed_department_count`, 개인정보 비노출 정책을 반환합니다. `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다. 기존 `GET /api/v1/dashboard/departments/work-signals/trend`도 호환성을 위해 유지합니다.
 
 ### Monthly data pipeline
 
@@ -232,7 +234,7 @@ curl.exe -sS -N --max-time 4 http://localhost:8000/api/v1/dashboard/slack/stream
 curl.exe -sS "http://localhost:8000/api/v1/dashboard/organization/support-timeline?granularity=week"
 ```
 
-SSE 명령은 연결을 4초 뒤 의도적으로 종료하므로 `curl` timeout exit code가 발생할 수 있습니다. 응답에 `event:`와 `data:`가 수신되면 stream 전달이 동작한 것입니다.
+SSE 명령은 연결을 4초 뒤 의도적으로 종료하므로 `curl` timeout exit code가 발생할 수 있습니다. 응답에 `event:`와 `data:`가 수신되면 stream 전달이 동작한 것입니다. 이 stream은 조직 전체 추론 점수를 보내지 않고 최신 메시지 시각만 갱신 신호로 전달하며, Dashboard는 이를 받으면 최소 코호트 기준이 적용된 부서 타임라인을 다시 조회합니다.
 
 ## 11. 한계
 

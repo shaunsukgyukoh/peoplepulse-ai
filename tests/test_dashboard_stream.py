@@ -7,7 +7,7 @@ from peoplepulse.api import dashboard as dashboard_api
 
 
 def test_slack_stream_yields_json_event_without_wrapping_a_coroutine(monkeypatch) -> None:
-    payload = {
+    snapshot = {
         "message_count": 1,
         "avg_inference_ms": 12.5,
         "work_strain": 0.25,
@@ -19,7 +19,7 @@ def test_slack_stream_yields_json_event_without_wrapping_a_coroutine(monkeypatch
 
     class FakeDashboardService:
         def slack_live(self) -> dict:
-            return payload
+            return snapshot
 
     monkeypatch.setattr(dashboard_api, "_service", FakeDashboardService)
     monkeypatch.setattr(
@@ -38,4 +38,7 @@ def test_slack_stream_yields_json_event_without_wrapping_a_coroutine(monkeypatch
     event = asyncio.run(first_event())
 
     assert event.event == "slack_signal"
-    assert event.data == payload
+    assert event.data == {"last_message_at": snapshot["last_message_at"]}
+    assert "signals" not in event.data
+    assert "work_strain" not in event.data
+    assert "message_count" not in event.data

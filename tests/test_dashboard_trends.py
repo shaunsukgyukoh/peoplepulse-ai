@@ -66,5 +66,20 @@ def test_organization_timeline_is_department_only_and_privacy_safe() -> None:
     assert '"psychological_diagnosis": False' in service
     assert "aggregate_work_communication_signals_only" in service
     assert '"grouping": "department"' in service
+    assert '"suppressed_department_count"' in service
     assert 'router.get("/organization/support-timeline")' in api
+    assert 'router.get("/slack/live")' not in api
+    assert 'router.get("/slack/trend")' not in api
+    assert 'result.pop("slack", None)' in api
     assert "/self-report/" not in api
+
+
+def test_dashboard_compares_all_eligible_departments_across_time_ranges() -> None:
+    dashboard = Path("dashboard/app/page.tsx").read_text(encoding="utf-8")
+    assert "departmentTimelineHeatmap" in dashboard
+    assert "departmentTimelineLines" in dashboard
+    assert "latestDepartmentPoints" in dashboard
+    assert 'label: "60분"' in dashboard
+    assert 'label: "일별"' in dashboard
+    assert 'label: "주간"' in dashboard
+    assert "suppressed_department_count" in dashboard

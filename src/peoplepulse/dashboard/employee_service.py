@@ -113,6 +113,7 @@ class EmployeeDashboardService:
             "grouping": "department",
             "aggregation": result["aggregation"],
             "source": result["source"],
+            "suppressed_department_count": result["suppressed_department_count"],
             "departments": result["departments"],
             "points": result["points"],
             "privacy": {
@@ -139,11 +140,29 @@ class EmployeeDashboardService:
                     "minimum_cohort_size": minimum_cohort_size,
                     "aggregation": "employee_first_then_department_average",
                     "source": "aggregate_work_communication_signals_only",
+                    "suppressed_department_count": 0,
                     "departments": [],
                     "points": [],
                 }
 
             with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT COUNT(*) FILTER (
+                        WHERE active_employee_count < %s
+                    )::bigint AS suppressed_department_count
+                    FROM (
+                        SELECT department, COUNT(*)::bigint AS active_employee_count
+                        FROM core.employee_directory
+                        WHERE is_active = TRUE
+                          AND (%s::text IS NULL OR department = %s)
+                        GROUP BY department
+                    ) department_counts
+                    """,
+                    (minimum_cohort_size, department, department),
+                )
+                department_summary = cursor.fetchone()
+
                 cursor.execute(
                     """
                     SELECT department, COUNT(*)::bigint AS active_employee_count
@@ -215,6 +234,9 @@ class EmployeeDashboardService:
             "minimum_cohort_size": minimum_cohort_size,
             "aggregation": "employee_first_then_department_average",
             "source": "aggregate_work_communication_signals_only",
+            "suppressed_department_count": int(
+                department_summary["suppressed_department_count"] or 0
+            ),
             "departments": [
                 {
                     "department": row["department"],

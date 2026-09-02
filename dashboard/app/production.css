@@ -12,6 +12,7 @@
 .star-button:disabled { opacity: .5; cursor: wait; }
 .trend-section-head { align-items: center; }
 .timeline-control-stack { display: grid; gap: 8px; min-width: min(100%, 420px); }
+.timeline-signal-select { width: 100%; }
 .range-tabs { display: grid; grid-template-columns: repeat(4, minmax(72px, 1fr)); gap: 7px; }
 .range-tabs button { border: 1px solid var(--border); background: rgba(255,255,255,.025); color: var(--muted); border-radius: 10px; padding: 8px 10px; font-weight: 750; }
 .range-tabs button small { display: block; margin-top: 3px; color: inherit; font-size: 9px; font-weight: 500; opacity: .75; }
@@ -27,6 +28,14 @@
 .timeline-reading-guide ol { margin: 18px 0 0; padding-left: 19px; color: var(--muted); font-size: 11px; line-height: 1.8; }
 .timeline-reading-guide p { margin: 18px 0 0; color: #d9c89c; font-size: 10px; line-height: 1.55; }
 .timeline-heatmap-panel { min-height: 360px; }
+.department-lines-panel { margin-top: 14px; min-height: 430px; }
+.department-signal-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.department-signal-card { padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.025); }
+.department-signal-head { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.department-signal-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.department-signal-head span { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.department-signal-value { margin-top: 12px; color: var(--accent-2); font-size: 25px; font-weight: 850; letter-spacing: -.035em; }
+.department-signal-meta { margin-top: 7px; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .timeline-empty { min-height: 260px; display: grid; place-items: center; padding: 24px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); font-size: 11px; text-align: center; line-height: 1.6; }
 .trend-policy { margin-top: 9px; color: var(--muted); font-size: 10px; text-align: right; }
 .timeline-policy-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
@@ -39,4 +48,9 @@
   .range-tabs { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .timeline-source-note { grid-template-columns: 1fr; }
   .timeline-overview-grid { grid-template-columns: 1fr; }
+  .department-signal-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .department-signal-grid { grid-template-columns: 1fr; }
 }

@@ -12,8 +12,6 @@ import {
   type EmployeesResponse,
   type Overview,
   type OrganizationSupportTimelineResponse,
-  type SlackLive,
-  type SlackTrendPoint,
   type TrendGranularity,
 } from "@/lib/api";
 
@@ -33,42 +31,31 @@ const TREND_GRANULARITY_OPTIONS: Array<{
   label: string;
   detail: string;
 }> = [
-  { value: "hour", label: "시간", detail: "최근 24시간" },
-  { value: "day", label: "일", detail: "최근 30일" },
-  { value: "week", label: "주", detail: "최근 12주" },
-  { value: "month", label: "월", detail: "최근 12개월" },
+  { value: "hour", label: "60분", detail: "최근 24시간" },
+  { value: "day", label: "일별", detail: "최근 30일" },
+  { value: "week", label: "주간", detail: "최근 12주" },
+  { value: "month", label: "월간", detail: "최근 12개월" },
+];
+
+type TimelineSignal = "work_strain" | keyof typeof SIGNAL_LABEL;
+
+const TIMELINE_SIGNAL_OPTIONS: Array<{ value: TimelineSignal; label: string }> = [
+  { value: "work_strain", label: "업무 긴장 종합" },
+  ...Object.entries(SIGNAL_LABEL).map(([value, label]) => ({
+    value: value as TimelineSignal,
+    label,
+  })),
 ];
 
 function pct(value: number | undefined | null): string {
   return typeof value === "number" && Number.isFinite(value) ? `${(value * 100).toFixed(1)}%` : "—";
 }
 
-function signalChart(points: SlackTrendPoint[]): EChartsOption {
-  return {
-    backgroundColor: "transparent",
-    tooltip: { trigger: "axis", valueFormatter: (value) => `${(Number(value) * 100).toFixed(1)}%` },
-    legend: { data: ["업무 긴장 신호", "긍정 표현", "과부하 표현"], textStyle: { color: "#9bb5ad" } },
-    grid: { left: 42, right: 22, top: 42, bottom: 30 },
-    xAxis: {
-      type: "category",
-      data: points.map((p) => new Date(p.bucket).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })),
-      boundaryGap: false,
-      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
-      axisLabel: { color: "#78958c", hideOverlap: true },
-    },
-    yAxis: {
-      type: "value",
-      min: 0,
-      max: 1,
-      axisLabel: { color: "#78958c", formatter: (value: number) => `${Math.round(value * 100)}%` },
-      splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
-    },
-    series: [
-      { name: "업무 긴장 신호", type: "line", smooth: true, showSymbol: false, data: points.map((p) => p.work_strain) },
-      { name: "긍정 표현", type: "line", smooth: true, showSymbol: false, data: points.map((p) => p.satisfied) },
-      { name: "과부하 표현", type: "line", smooth: true, showSymbol: false, data: points.map((p) => p.overloaded) },
-    ],
-  };
+function timelineSignalValue(
+  point: OrganizationSupportTimelineResponse["points"][number],
+  signal: TimelineSignal,
+): number {
+  return signal === "work_strain" ? point.work_strain : point.signals[signal] ?? 0;
 }
 
 function trendBucketLabel(bucket: string, granularity: TrendGranularity): string {
@@ -97,6 +84,7 @@ function departmentTimelineHeatmap(
   result: OrganizationSupportTimelineResponse,
   granularity: TrendGranularity,
   buckets: string[],
+  signal: TimelineSignal,
 ): EChartsOption {
   const groups = result.departments.map((department) => department.department);
   const data: Array<[number, number, number]> = result.points
@@ -104,7 +92,7 @@ function departmentTimelineHeatmap(
     .map((point) => [
       buckets.indexOf(point.bucket),
       groups.indexOf(point.department),
-      point.work_strain,
+      timelineSignalValue(point, signal),
     ]);
   return {
     tooltip: { position: "top" },
@@ -135,13 +123,70 @@ function departmentTimelineHeatmap(
     },
     series: [
       {
-        name: "업무 커뮤니케이션 긴장",
+        name: TIMELINE_SIGNAL_OPTIONS.find((option) => option.value === signal)?.label,
         type: "heatmap",
         data,
         label: { show: false },
         emphasis: { itemStyle: { shadowBlur: 12, shadowColor: "rgba(0,0,0,.45)" } },
       },
     ],
+  };
+}
+
+function departmentTimelineLines(
+  result: OrganizationSupportTimelineResponse,
+  granularity: TrendGranularity,
+  buckets: string[],
+  signal: TimelineSignal,
+): EChartsOption {
+  const points = new Map(
+    result.points.map((point) => [
+      `${point.department}\u0000${point.bucket}`,
+      timelineSignalValue(point, signal),
+    ]),
+  );
+  return {
+    tooltip: {
+      trigger: "axis",
+      valueFormatter: (value) => `${(Number(value) * 100).toFixed(1)}%`,
+    },
+    legend: {
+      type: "scroll",
+      top: 0,
+      textStyle: { color: "#9bb5ad" },
+    },
+    grid: { left: 46, right: 24, top: 54, bottom: 42 },
+    xAxis: {
+      type: "category",
+      data: buckets.map((bucket) => trendBucketLabel(bucket, granularity)),
+      boundaryGap: false,
+      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
+      axisLabel: {
+        color: "#78958c",
+        hideOverlap: true,
+        rotate: granularity === "hour" ? 25 : 0,
+      },
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: 1,
+      axisLabel: {
+        color: "#78958c",
+        formatter: (value: number) => `${Math.round(value * 100)}%`,
+      },
+      splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
+    },
+    series: result.departments.map((department) => ({
+      name: department.department,
+      type: "line",
+      smooth: true,
+      connectNulls: false,
+      showSymbol: false,
+      data: buckets.map(
+        (bucket) => points.get(`${department.department}\u0000${bucket}`) ?? null,
+      ),
+    })),
   };
 }
 
@@ -152,8 +197,6 @@ function timelineHeatmapHeight(result: OrganizationSupportTimelineResponse): num
 export default function DashboardPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [employeesData, setEmployeesData] = useState<EmployeesResponse | null>(null);
-  const [live, setLive] = useState<SlackLive | null>(null);
-  const [trend, setTrend] = useState<SlackTrendPoint[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [signalRevision, setSignalRevision] = useState(0);
@@ -165,6 +208,7 @@ export default function DashboardPage() {
   const [adminToken, setAdminToken] = useState("");
   const [savingStar, setSavingStar] = useState<string | null>(null);
   const [trendGranularity, setTrendGranularity] = useState<TrendGranularity>("week");
+  const [timelineSignal, setTimelineSignal] = useState<TimelineSignal>("work_strain");
   const [timelineData, setTimelineData] = useState<OrganizationSupportTimelineResponse | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
 
@@ -177,15 +221,12 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     try {
-      const [overviewData, employeeRows, trendData] = await Promise.all([
+      const [overviewData, employeeRows] = await Promise.all([
         getJson<Overview>("/api/v1/dashboard/overview"),
         getJson<EmployeesResponse>("/api/v1/dashboard/employees"),
-        getJson<{ points: SlackTrendPoint[] }>("/api/v1/dashboard/slack/trend?minutes=60"),
       ]);
       setOverview(overviewData);
       setEmployeesData(employeeRows);
-      setLive(overviewData.slack);
-      setTrend(trendData.points);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -200,14 +241,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const source = new EventSource(`${apiBase()}/api/v1/dashboard/slack/stream`);
-    source.addEventListener("slack_signal", (event) => {
-      const message = event as MessageEvent<string>;
-      setLive(JSON.parse(message.data) as SlackLive);
+    source.addEventListener("slack_signal", () => {
       setConnected(true);
       setSignalRevision((revision) => revision + 1);
-      void getJson<{ points: SlackTrendPoint[] }>("/api/v1/dashboard/slack/trend?minutes=60")
-        .then((data) => setTrend(data.points))
-        .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
     });
     source.onopen = () => setConnected(true);
     source.onerror = () => setConnected(false);
@@ -298,8 +334,16 @@ export default function DashboardPage() {
   }
 
   const workforce = employeesData?.summary ?? overview?.workforce;
-  const currentLive = live ?? overview?.slack;
   const timelineAxisBuckets = timelineData ? timelineBucketAxis(timelineData) : [];
+  const timelineSignalLabel = TIMELINE_SIGNAL_OPTIONS.find(
+    (option) => option.value === timelineSignal,
+  )?.label;
+  const latestDepartmentPoints = timelineData?.departments.map((department) => {
+    const points = timelineData.points
+      .filter((point) => point.department === department.department)
+      .sort((a, b) => b.bucket.localeCompare(a.bucket));
+    return { ...department, point: points[0] ?? null };
+  }) ?? [];
 
   return (
     <div className="shell">
@@ -308,9 +352,8 @@ export default function DashboardPage() {
         <div className="brand-sub">HR workforce support dashboard</div>
         <nav className="nav">
           <a href="#overview">운영 요약</a>
-          <a href="#state-trends">조직 타임라인</a>
+          <a href="#signals">부서 업무 신호</a>
           <a href="#employees">직원 현황</a>
-          <a href="#signals">조직 업무 신호</a>
           <a href="#reports">월말 데이터 업데이트</a>
         </nav>
         <div className="sidebar-note">
@@ -335,15 +378,14 @@ export default function DashboardPage() {
 
         <section id="overview" className="section-shell">
           <div className="section-head"><div><div className="eyebrow">Overview</div><h2>운영 요약</h2><p>HR 운영에 필요한 현재 상태만 보여줍니다.</p></div></div>
-          <div className="grid-4">
+          <div className="grid-3">
             <div className="metric-card metric-card-accent"><div className="metric-label">재직 직원</div><div className="metric-value">{workforce?.employee_count ?? 0}</div><div className="metric-detail">Employee Directory 기준</div></div>
             <div className="metric-card"><div className="metric-label">핵심인력</div><div className="metric-value">★ {workforce?.key_staff_count ?? 0}</div><div className="metric-detail">관리자가 수동 지정</div></div>
-            <div className="metric-card"><div className="metric-label">조직 업무 긴장 신호</div><div className="metric-value">{pct(currentLive?.work_strain)}</div><div className="metric-detail">최근 15분 조직 전체 집계</div></div>
             <div className="metric-card"><div className="metric-label">최근 월말 데이터</div><div className="metric-value">{overview?.latest_report?.report_month ?? "—"}</div><div className="metric-detail">3종 보고서 처리 현황</div></div>
           </div>
         </section>
 
-        <section id="state-trends" className="section-shell">
+        <section id="signals" className="section-shell">
           <div className="section-head trend-section-head">
             <div>
               <div className="eyebrow">Department Work Signal Timeline</div>
@@ -351,6 +393,16 @@ export default function DashboardPage() {
               <p>같은 시간축에서 부서별 업무 커뮤니케이션 변화를 비교합니다. 모든 값은 직원별로 먼저 집계하며 최소 인원 기준을 통과한 부서·시간 구간만 표시합니다.</p>
             </div>
             <div className="timeline-control-stack">
+              <select
+                className="field timeline-signal-select"
+                value={timelineSignal}
+                onChange={(event) => setTimelineSignal(event.target.value as TimelineSignal)}
+                aria-label="업무 신호 선택"
+              >
+                {TIMELINE_SIGNAL_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
               <div className="range-tabs" aria-label="추세 집계 단위">
                 {TREND_GRANULARITY_OPTIONS.map((option) => (
                   <button
@@ -368,7 +420,7 @@ export default function DashboardPage() {
           </div>
 
           <div className="timeline-source-note">
-            <div><span className="timeline-source-dot" />업무 커뮤니케이션 긴장</div>
+            <div><span className="timeline-source-dot" />{timelineSignalLabel}</div>
             <p>Slack 업무 표현을 직원별로 먼저 평균한 뒤 조직도상 부서별로만 재집계합니다. 심리 상태나 정신건강 진단이 아닙니다.</p>
             <span>구간별 최소 {timelineData?.minimum_cohort_size ?? 5}명</span>
           </div>
@@ -381,7 +433,7 @@ export default function DashboardPage() {
                 <span className="panel-subtitle">{timelineData?.departments.length ?? 0}개 부서 표시</span>
               </div>
               {timelineData && timelineData.points.length > 0 ? (
-                <EChart option={departmentTimelineHeatmap(timelineData, trendGranularity, timelineAxisBuckets)} height={timelineHeatmapHeight(timelineData)} />
+                <EChart option={departmentTimelineHeatmap(timelineData, trendGranularity, timelineAxisBuckets, timelineSignal)} height={timelineHeatmapHeight(timelineData)} />
               ) : <div className="timeline-empty">이 기간에는 최소 인원 기준을 통과한 부서별 구간이 없습니다.</div>}
               <div className="trend-policy">employee_directory.department 기준 · 직원별 선집계 → 부서 평균</div>
             </div>
@@ -397,8 +449,38 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          <div className="panel department-lines-panel">
+            <div className="panel-title">
+              <span>전체 표시 가능 부서 비교</span>
+              <span className="panel-subtitle">조직 전체 평균이 아닌 부서별 선 비교</span>
+            </div>
+            {timelineData && timelineData.points.length > 0 ? (
+              <EChart option={departmentTimelineLines(timelineData, trendGranularity, timelineAxisBuckets, timelineSignal)} height={360} />
+            ) : <div className="timeline-empty">선택한 기간에 비교 가능한 부서 시계열이 없습니다.</div>}
+          </div>
+
+          <div className="department-signal-grid">
+            {latestDepartmentPoints.map((departmentRow) => (
+              <article className="department-signal-card" key={departmentRow.department}>
+                <div className="department-signal-head">
+                  <strong>{departmentRow.department}</strong>
+                  <span>{departmentRow.active_employee_count}명</span>
+                </div>
+                <div className="department-signal-value">
+                  {departmentRow.point ? pct(timelineSignalValue(departmentRow.point, timelineSignal)) : "—"}
+                </div>
+                <div className="department-signal-meta">
+                  {departmentRow.point
+                    ? `${trendBucketLabel(departmentRow.point.bucket, trendGranularity)} · 참여 ${departmentRow.point.cohort_employee_count}명 · 메시지 ${departmentRow.point.message_count}건`
+                    : "선택 기간에 최소 인원 기준을 충족한 구간 없음"}
+                </div>
+              </article>
+            ))}
+          </div>
+
           <div className="timeline-policy-strip">
-            <span>조직도상 부서만 제공</span>
+            <span>표시 가능 {timelineData?.departments.length ?? 0}개 부서</span>
+            <span>최소 인원 미달 {timelineData?.suppressed_department_count ?? 0}개 부서 비공개</span>
             <span>개인 식별값 0건</span>
             <span>원문 비저장</span>
             <span>심리·정신건강 진단 아님</span>
@@ -441,14 +523,6 @@ export default function DashboardPage() {
             </table>
           </div>
           {!filteredEmployees.length && <div className="notice">조건에 맞는 직원이 없습니다. Employee Directory가 비어 있다면 `scripts/load_employee_directory.py`로 먼저 등록하세요.</div>}
-        </section>
-
-        <section id="signals" className="section-shell">
-          <div className="section-head"><div><div className="eyebrow">Work Communication Signals</div><h2>조직 업무 신호</h2><p>Slack 원문은 저장하지 않으며 개인별 점수는 표시하지 않습니다. 이 지표는 조직 수준의 업무 커뮤니케이션 추세를 파악해 지원·업무환경 개선 논의를 시작하기 위한 참고값입니다.</p></div></div>
-          <div className="panel"><div className="panel-title">최근 60분 추세<span className="panel-subtitle">aggregate only</span></div><EChart option={signalChart(trend)} height={330} /></div>
-          <div className="signal-grid">
-            {Object.entries(currentLive?.signals ?? {}).map(([key, value]) => <div className="signal" key={key}><div className="signal-name">{SIGNAL_LABEL[key] ?? key}</div><div className="signal-score">{pct(value)}</div><div className="progress"><span style={{ width: `${Math.max(0, Math.min(100, value * 100))}%` }} /></div></div>)}
-          </div>
         </section>
 
         <section id="reports" className="section-shell">

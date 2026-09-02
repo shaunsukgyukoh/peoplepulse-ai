@@ -40,9 +40,12 @@ TrendGranularity = Literal["hour", "day", "week", "month"]
 @router.get("/overview")
 def overview() -> dict:
     result = _service().executive_overview()
-    # Production main intentionally keeps model benchmark details out of the HR UI payload.
+    # Production main keeps model details and organization-wide Slack inference
+    # out of the HR UI payload. Slack signals are exposed only by the
+    # department/cohort timeline endpoints below.
     result.pop("nlp_model", None)
     result.pop("attrition_model", None)
+    result.pop("slack", None)
     result["workforce"] = _employee_service().workforce_summary()
     return result
 
@@ -92,17 +95,6 @@ def organization_support_timeline(
     return _employee_service().organization_support_timeline(granularity)
 
 
-@router.get("/slack/live")
-def slack_live() -> dict:
-    # Aggregate/cohort signal only; no employee identity is returned.
-    return _service().slack_live()
-
-
-@router.get("/slack/trend")
-def slack_trend(minutes: int = Query(default=60, ge=5, le=1440)) -> dict:
-    return {"minutes": minutes, "points": _service().slack_trend(minutes=minutes)}
-
-
 @router.get("/reports/latest")
 def reports_latest() -> dict:
     return {"latest": _service().latest_report()}
@@ -132,7 +124,10 @@ async def slack_stream():
     last: str | None = None
     while True:
         # psycopg is synchronous, so keep database reads off the ASGI event loop.
-        payload = await asyncio.to_thread(service.slack_live)
+        snapshot = await asyncio.to_thread(service.slack_live)
+        # The stream is invalidation-only: clients receive no organization-wide
+        # inferred scores and refetch the cohort-protected department timeline.
+        payload = {"last_message_at": snapshot.get("last_message_at")}
         encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         if encoded != last:
             last = encoded
