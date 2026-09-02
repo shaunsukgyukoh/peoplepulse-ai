@@ -62,6 +62,12 @@ class Settings(BaseSettings):
     )
     dashboard_stream_interval_seconds: float = 2.0
     dashboard_allowed_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    dashboard_synthetic_identity_path: str = (
+        "data/synthetic/identity/canonical_employee_map.csv"
+    )
+    dashboard_synthetic_messages_path: str = (
+        "data/synthetic/dashboard/individual_activity_messages.csv"
+    )
 
 
     mlflow_tracking_uri: str = "http://localhost:5000"
@@ -99,7 +105,11 @@ class Settings(BaseSettings):
 
     @property
     def dashboard_cors_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.dashboard_allowed_origins.split(",") if origin.strip()]
+        return [
+            origin.strip()
+            for origin in self.dashboard_allowed_origins.split(",")
+            if origin.strip()
+        ]
 
     @property
     def postgres_dsn(self) -> str:
@@ -116,7 +126,10 @@ class Settings(BaseSettings):
             errors.append("Agent scope must be aggregate or synthetic_demo")
         if selected == "synthetic_demo" and self.app_env == "production":
             errors.append("synthetic_demo agent scope is blocked when APP_ENV=production")
-        if selected == "synthetic_demo" and self.employee_hash_key in {"", "replace-with-a-long-random-secret"}:
+        if selected == "synthetic_demo" and self.employee_hash_key in {
+            "",
+            "replace-with-a-long-random-secret",
+        }:
             errors.append("synthetic_demo agent scope requires the existing EMPLOYEE_HASH_KEY")
         if not self.agent_ollama_base_url.startswith(("http://", "https://")):
             errors.append("AGENT_OLLAMA_BASE_URL must be an http(s) URL")
@@ -173,7 +186,9 @@ class Settings(BaseSettings):
         if not 1 <= self.activity_workday_end_hour <= 24:
             errors.append("ACTIVITY_WORKDAY_END_HOUR must be between 1 and 24")
         if self.activity_workday_start_hour >= self.activity_workday_end_hour:
-            errors.append("ACTIVITY_WORKDAY_START_HOUR must be earlier than ACTIVITY_WORKDAY_END_HOUR")
+            errors.append(
+                "ACTIVITY_WORKDAY_START_HOUR must be earlier than ACTIVITY_WORKDAY_END_HOUR"
+            )
         if self.activity_max_upload_bytes < 1024:
             errors.append("ACTIVITY_MAX_UPLOAD_BYTES must be >= 1024")
         if self.activity_privacy_mode not in {"aggregate", "synthetic_demo"}:

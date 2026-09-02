@@ -7,6 +7,8 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY configs ./configs
 COPY docs ./docs
+COPY data/synthetic/identity/canonical_employee_map.csv ./data/synthetic/identity/canonical_employee_map.csv
+COPY data/synthetic/dashboard/individual_activity_messages.csv ./data/synthetic/dashboard/individual_activity_messages.csv
 COPY src ./src
 RUN python -m pip install --no-cache-dir --upgrade pip \
     && python -m pip install --no-cache-dir ".[activity,agent]"

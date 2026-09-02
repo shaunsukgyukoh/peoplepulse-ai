@@ -63,6 +63,21 @@ raw text를 analytics DB에 장기 저장하는 대신 NLP에서 필요한 deriv
 
 통합 API는 `GET /api/v1/dashboard/organization/support-timeline`이며 `grouping=department`, 최소 인원 기준을 통과한 `departments`, 부서별 `points`, `suppressed_department_count`, 개인정보 비노출 정책을 반환합니다. `granularity`에는 `hour`, `day`, `week`, `month`를 사용할 수 있습니다. 기존 `GET /api/v1/dashboard/departments/work-signals/trend`도 호환성을 위해 유지합니다.
 
+### Synthetic individual activity demo
+
+개인 portfolio용 `synthetic_demo`에서는 `김가람`, `이도윤`, `박서진`이라는 기존 가상 이름을 유지한 별도 개인 활동 화면을 제공합니다. 이 화면은 `APP_ENV=development`이면서 `ACTIVITY_PRIVACY_MODE=synthetic_demo`일 때만 활성화되고, production 또는 aggregate 모드의 `GET /api/v1/dashboard/synthetic-demo/individual-activity`는 이름이나 개인 행 없이 `enabled=false`를 반환합니다.
+
+- 활동 시계열은 `Synthetic_` 파일명 검사를 통과한 배치의 `features.synthetic_employee_monthly_activity`에서만 읽습니다.
+- 개인 화면에는 문서 활동, privacy filter를 거친 업무 웹 검색 횟수·활동일, 시간외/주말 비율만 제공합니다. 개인별 Slack feature와 구직 사이트 활동은 반환하지 않습니다.
+- 메시지 예시는 Slack 수집 데이터가 아닌 `data/synthetic/dashboard/individual_activity_messages.csv`의 오프라인 가상 fixture입니다. API는 원문을 반환하지 않고 메시지 수, 공백 제외 글자 수, 표면 토큰 수, 질문/감탄부호 수, 존댓말 종결 비율, 빈출 토큰만 계산합니다.
+- 긍정/부정/중립 점수, Sentiment Ratio, 부드러움/강경함 같은 어조 라벨, 감정·심리·정신건강 상태는 개인별로 계산하거나 표시하지 않습니다.
+
+전체 synthetic seed와 Dashboard를 실행하려면 다음 portfolio 명령을 사용합니다.
+
+```powershell
+.\scripts\portfolio_up.ps1 -Scope synthetic_demo
+```
+
 ### Monthly data pipeline
 
 서로 다른 월간 report format을 parser가 자동 인식하고 Pandera validation과 privacy filtering을 거쳐 monthly feature로 변환합니다.

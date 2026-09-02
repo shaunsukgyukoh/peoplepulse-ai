@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,6 +9,11 @@ from psycopg.rows import dict_row
 
 from peoplepulse.config import Settings
 from peoplepulse.dashboard.service import SIGNALS, WORK_STRAIN_SIGNALS
+from peoplepulse.dashboard.synthetic_demo import (
+    empty_text_statistics,
+    load_structural_text_statistics,
+    load_synthetic_personas,
+)
 
 TREND_WINDOWS: dict[str, tuple[str, str, str]] = {
     "hour": ("hour", "24 hours", "last_24_hours"),
@@ -101,6 +107,122 @@ class EmployeeDashboardService:
             "employee_count": len(rows),
             "key_staff_count": starred,
             "departments": departments,
+        }
+
+    def synthetic_individual_activity(self) -> dict[str, Any]:
+        enabled = (
+            self.settings.app_env != "production"
+            and self.settings.activity_privacy_mode == "synthetic_demo"
+        )
+        policy = {
+            "synthetic_only": True,
+            "production_blocked": True,
+            "real_employee_data_allowed": False,
+            "raw_messages_returned": False,
+            "individual_slack_nlp_visible": False,
+            "sentiment_or_tone_inference": False,
+            "psychological_diagnosis": False,
+        }
+        if not enabled:
+            return {
+                "enabled": False,
+                "scope": "synthetic_demo_only",
+                "unavailable_reason": (
+                    "Set APP_ENV=development and ACTIVITY_PRIVACY_MODE=synthetic_demo "
+                    "to enable the fictional-person activity demo."
+                ),
+                "personas": [],
+                "policy": policy,
+            }
+
+        self.settings.validate_activity_runtime()
+        personas = load_synthetic_personas(
+            self.settings.dashboard_synthetic_identity_path,
+            secret=self.settings.employee_hash_key,
+        )
+        structural_stats = load_structural_text_statistics(
+            self.settings.dashboard_synthetic_messages_path
+        )
+        activity_by_hash: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        with self._connect() as connection:
+            if self._table_exists(connection, "features.synthetic_employee_monthly_activity"):
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT
+                            a.employee_id_hash,
+                            a.report_month,
+                            a.web_search_events,
+                            a.web_search_active_days,
+                            a.document_usage_events,
+                            a.document_active_days,
+                            a.document_create_events,
+                            a.document_modify_events,
+                            a.document_view_events,
+                            a.after_hours_search_ratio,
+                            a.after_hours_document_ratio,
+                            a.weekend_search_ratio,
+                            a.weekend_document_ratio
+                        FROM features.synthetic_employee_monthly_activity a
+                        JOIN audit.activity_report_set_batch b
+                          ON b.batch_id = a.source_batch_id
+                         AND b.privacy_mode = 'synthetic_demo'
+                        ORDER BY a.report_month, a.employee_id_hash
+                        """
+                    )
+                    for row in cursor.fetchall():
+                        activity_by_hash[str(row["employee_id_hash"]).strip()].append(
+                            {
+                                "report_month": row["report_month"].isoformat(),
+                                "web_search_events": int(row["web_search_events"]),
+                                "web_search_active_days": int(row["web_search_active_days"]),
+                                "document_usage_events": int(row["document_usage_events"]),
+                                "document_active_days": int(row["document_active_days"]),
+                                "document_create_events": int(row["document_create_events"]),
+                                "document_modify_events": int(row["document_modify_events"]),
+                                "document_view_events": int(row["document_view_events"]),
+                                "after_hours_search_ratio": float(
+                                    row["after_hours_search_ratio"]
+                                ),
+                                "after_hours_document_ratio": float(
+                                    row["after_hours_document_ratio"]
+                                ),
+                                "weekend_search_ratio": float(row["weekend_search_ratio"]),
+                                "weekend_document_ratio": float(
+                                    row["weekend_document_ratio"]
+                                ),
+                            }
+                        )
+
+        result_personas = []
+        for persona in personas:
+            activity_hash = persona["activity_employee_id_hash"]
+            public_persona = {
+                key: value
+                for key, value in persona.items()
+                if key != "activity_employee_id_hash"
+            }
+            result_personas.append(
+                {
+                    **public_persona,
+                    "fictional": True,
+                    "activity_points": activity_by_hash.get(activity_hash, []),
+                    "text_statistics": structural_stats.get(
+                        persona["canonical_employee_key"],
+                        empty_text_statistics(),
+                    ),
+                }
+            )
+        return {
+            "enabled": True,
+            "scope": "synthetic_demo_only",
+            "unavailable_reason": None,
+            "personas": result_personas,
+            "policy": policy,
+            "sources": {
+                "activity": "verified_synthetic_monthly_activity_features",
+                "text": "offline_synthetic_fixture_structural_counts_only",
+            },
         }
 
     def organization_support_timeline(self, granularity: str) -> dict[str, Any]:

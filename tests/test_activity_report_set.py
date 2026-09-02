@@ -1,8 +1,13 @@
-# ruff: noqa: E501
+from datetime import date
+
 import pandas as pd
 import pytest
 
-from peoplepulse.activity.processor import ActivityUploadError, MonthlyActivityReportSetProcessor, PreparedReport
+from peoplepulse.activity.processor import (
+    ActivityUploadError,
+    MonthlyActivityReportSetProcessor,
+    PreparedReport,
+)
 from peoplepulse.activity.report_types import ReportType
 
 
@@ -15,6 +20,9 @@ def _prepared(report_type: ReportType) -> PreparedReport:
         duplicate_rows_removed=0,
         privacy_excluded_rows=0,
         frame=pd.DataFrame(),
+        period_start=date(2026, 7, 1),
+        period_end=date(2026, 7, 31),
+        period_declared=True,
     )
 
 

@@ -147,6 +147,8 @@ services:
       DASHBOARD_SHAP_PATH: /artifacts/ml/step6/privacy_safe/shap/shap_feature_importance.csv
       DASHBOARD_STREAM_INTERVAL_SECONDS: ${DASHBOARD_STREAM_INTERVAL_SECONDS:-2}
       DASHBOARD_ALLOWED_ORIGINS: ${DASHBOARD_ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      DASHBOARD_SYNTHETIC_IDENTITY_PATH: /app/data/synthetic/identity/canonical_employee_map.csv
+      DASHBOARD_SYNTHETIC_MESSAGES_PATH: /app/data/synthetic/dashboard/individual_activity_messages.csv
       MLOPS_MONITORING_ARTIFACT_ROOT: /artifacts/monitoring
       MLOPS_MONITORING_SCOPE: ${MLOPS_MONITORING_SCOPE:-synthetic_demo}
       MLFLOW_TRACKING_URI: http://mlflow:5000

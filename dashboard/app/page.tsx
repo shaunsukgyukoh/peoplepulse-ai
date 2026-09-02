@@ -12,6 +12,8 @@ import {
   type EmployeesResponse,
   type Overview,
   type OrganizationSupportTimelineResponse,
+  type SyntheticIndividualActivityResponse,
+  type SyntheticPersona,
   type TrendGranularity,
 } from "@/lib/api";
 
@@ -194,6 +196,54 @@ function timelineHeatmapHeight(result: OrganizationSupportTimelineResponse): num
   return Math.max(300, Math.min(620, result.departments.length * 30 + 100));
 }
 
+function syntheticActivityTimeline(persona: SyntheticPersona): EChartsOption {
+  const points = [...persona.activity_points].sort((a, b) =>
+    a.report_month.localeCompare(b.report_month),
+  );
+  return {
+    tooltip: { trigger: "axis" },
+    legend: { top: 0, textStyle: { color: "#9bb5ad" } },
+    grid: { left: 44, right: 20, top: 48, bottom: 38 },
+    xAxis: {
+      type: "category",
+      data: points.map((point) =>
+        new Date(point.report_month).toLocaleDateString("ko-KR", {
+          year: "numeric",
+          month: "short",
+        }),
+      ),
+      axisLabel: { color: "#78958c" },
+      axisLine: { lineStyle: { color: "rgba(184,216,207,.14)" } },
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      axisLabel: { color: "#78958c" },
+      splitLine: { lineStyle: { color: "rgba(184,216,207,.08)" } },
+    },
+    series: [
+      {
+        name: "문서 활동",
+        type: "line",
+        smooth: true,
+        data: points.map((point) => point.document_usage_events),
+      },
+      {
+        name: "업무 웹 검색",
+        type: "line",
+        smooth: true,
+        data: points.map((point) => point.web_search_events),
+      },
+      {
+        name: "문서 생성",
+        type: "line",
+        smooth: true,
+        data: points.map((point) => point.document_create_events),
+      },
+    ],
+  };
+}
+
 export default function DashboardPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [employeesData, setEmployeesData] = useState<EmployeesResponse | null>(null);
@@ -211,6 +261,8 @@ export default function DashboardPage() {
   const [timelineSignal, setTimelineSignal] = useState<TimelineSignal>("work_strain");
   const [timelineData, setTimelineData] = useState<OrganizationSupportTimelineResponse | null>(null);
   const [timelineError, setTimelineError] = useState<string | null>(null);
+  const [syntheticData, setSyntheticData] = useState<SyntheticIndividualActivityResponse | null>(null);
+  const [selectedSyntheticKey, setSelectedSyntheticKey] = useState("");
 
   const [jobFile, setJobFile] = useState<File | null>(null);
   const [searchFile, setSearchFile] = useState<File | null>(null);
@@ -220,12 +272,16 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     try {
-      const [overviewData, employeeRows] = await Promise.all([
+      const [overviewData, employeeRows, syntheticRows] = await Promise.all([
         getJson<Overview>("/api/v1/dashboard/overview"),
         getJson<EmployeesResponse>("/api/v1/dashboard/employees"),
+        getJson<SyntheticIndividualActivityResponse>(
+          "/api/v1/dashboard/synthetic-demo/individual-activity",
+        ),
       ]);
       setOverview(overviewData);
       setEmployeesData(employeeRows);
+      setSyntheticData(syntheticRows);
       setError(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
@@ -274,6 +330,13 @@ export default function DashboardPage() {
       cancelled = true;
     };
   }, [signalRevision, trendGranularity]);
+
+  useEffect(() => {
+    if (!syntheticData?.enabled || !syntheticData.personas.length) return;
+    if (!syntheticData.personas.some((row) => row.canonical_employee_key === selectedSyntheticKey)) {
+      setSelectedSyntheticKey(syntheticData.personas[0].canonical_employee_key);
+    }
+  }, [selectedSyntheticKey, syntheticData]);
 
   const filteredEmployees = useMemo(() => {
     const rows = [...(employeesData?.employees ?? [])].filter((row) => {
@@ -354,6 +417,12 @@ export default function DashboardPage() {
       .sort((a, b) => b.bucket.localeCompare(a.bucket));
     return { ...department, point: points[0] ?? null };
   }) ?? [];
+  const selectedSynthetic = syntheticData?.personas.find(
+    (persona) => persona.canonical_employee_key === selectedSyntheticKey,
+  ) ?? null;
+  const latestSyntheticPoint = selectedSynthetic?.activity_points
+    .slice()
+    .sort((a, b) => b.report_month.localeCompare(a.report_month))[0] ?? null;
 
   return (
     <div className="shell">
@@ -364,6 +433,7 @@ export default function DashboardPage() {
           <a href="#overview">운영 요약</a>
           <a href="#signals">부서 업무 신호</a>
           <a href="#employees">직원 현황</a>
+          {syntheticData?.enabled && <a href="#synthetic-individuals">가상 인물 데모</a>}
           <a href="#reports">월말 데이터 업데이트</a>
         </nav>
         <div className="sidebar-note">
@@ -534,6 +604,120 @@ export default function DashboardPage() {
           </div>
           {!filteredEmployees.length && <div className="notice">조건에 맞는 직원이 없습니다. Employee Directory가 비어 있다면 `scripts/load_employee_directory.py`로 먼저 등록하세요.</div>}
         </section>
+
+        {syntheticData?.enabled && (
+          <section id="synthetic-individuals" className="section-shell synthetic-demo-section">
+            <div className="section-head">
+              <div>
+                <div className="eyebrow">Synthetic Individual Activity Demo</div>
+                <h2>가상 인물별 업무 활동</h2>
+                <p>AI로 만든 세 인물과 Synthetic_ 보고서만 사용하는 개발용 데모입니다. 이름은 fixture의 원래 값을 유지하며 운영·실데이터 모드에서는 API가 빈 응답으로 차단됩니다.</p>
+              </div>
+              <span className="badge synthetic-badge">FICTIONAL DATA ONLY</span>
+            </div>
+
+            <div className="synthetic-persona-tabs" role="tablist" aria-label="가상 인물 선택">
+              {syntheticData.personas.map((persona) => {
+                const latest = persona.activity_points
+                  .slice()
+                  .sort((a, b) => b.report_month.localeCompare(a.report_month))[0];
+                return (
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={selectedSyntheticKey === persona.canonical_employee_key}
+                    className={selectedSyntheticKey === persona.canonical_employee_key ? "active" : ""}
+                    key={persona.canonical_employee_key}
+                    onClick={() => setSelectedSyntheticKey(persona.canonical_employee_key)}
+                  >
+                    <span>{persona.employee_name}</span>
+                    <small>{persona.department}</small>
+                    <em>{latest ? `${latest.document_usage_events + latest.web_search_events}건 활동` : "활동 데이터 없음"}</em>
+                  </button>
+                );
+              })}
+            </div>
+
+            {selectedSynthetic && (
+              <>
+                <div className="synthetic-persona-heading">
+                  <div>
+                    <span className="fictional-mark">가상 인물</span>
+                    <h3>{selectedSynthetic.employee_name}</h3>
+                    <p>{selectedSynthetic.department} · {selectedSynthetic.canonical_employee_key}</p>
+                  </div>
+                  <span>{latestSyntheticPoint ? new Date(latestSyntheticPoint.report_month).toLocaleDateString("ko-KR", { year: "numeric", month: "long" }) : "월간 활동 없음"}</span>
+                </div>
+
+                <div className="grid-4 synthetic-metrics">
+                  <div className="metric-card metric-card-accent">
+                    <div className="metric-label">문서 활동</div>
+                    <div className="metric-value">{latestSyntheticPoint?.document_usage_events ?? 0}</div>
+                    <div className="metric-detail">생성 {latestSyntheticPoint?.document_create_events ?? 0} · 수정 {latestSyntheticPoint?.document_modify_events ?? 0} · 열람 {latestSyntheticPoint?.document_view_events ?? 0}</div>
+                  </div>
+                  <div className="metric-card">
+                    <div className="metric-label">업무 웹 검색</div>
+                    <div className="metric-value">{latestSyntheticPoint?.web_search_events ?? 0}</div>
+                    <div className="metric-detail">활동일 {latestSyntheticPoint?.web_search_active_days ?? 0}일 · 시간외 {pct(latestSyntheticPoint?.after_hours_search_ratio)}</div>
+                  </div>
+                  <div className="metric-card">
+                    <div className="metric-label">문서 활동일</div>
+                    <div className="metric-value">{latestSyntheticPoint?.document_active_days ?? 0}</div>
+                    <div className="metric-detail">업무 문서를 다룬 서로 다른 날짜 수</div>
+                  </div>
+                  <div className="metric-card">
+                    <div className="metric-label">주말 문서 비율</div>
+                    <div className="metric-value">{pct(latestSyntheticPoint?.weekend_document_ratio)}</div>
+                    <div className="metric-detail">단순 활동 시간 통계 · 상태 해석 없음</div>
+                  </div>
+                </div>
+
+                <div className="grid-2 synthetic-detail-grid">
+                  <div className="panel">
+                    <div className="panel-title">
+                      <span>월별 객관적 활동량</span>
+                      <span className="panel-subtitle">Synthetic_ 보고서 feature</span>
+                    </div>
+                    {selectedSynthetic.activity_points.length ? (
+                      <EChart option={syntheticActivityTimeline(selectedSynthetic)} height={310} />
+                    ) : (
+                      <div className="timeline-empty">이 인물의 synthetic 활동 보고서를 먼저 업로드하세요.</div>
+                    )}
+                  </div>
+
+                  <div className="panel structural-text-panel">
+                    <div className="panel-title">
+                      <span>가상 메시지 텍스트 구조 통계</span>
+                      <span className="panel-subtitle">원문 미반환 · NLP 점수 없음</span>
+                    </div>
+                    <div className="structural-stat-grid">
+                      <div><span>메시지</span><strong>{selectedSynthetic.text_statistics.message_count}건</strong></div>
+                      <div><span>평균 글자 수</span><strong>{selectedSynthetic.text_statistics.average_characters_per_message.toFixed(1)}</strong></div>
+                      <div><span>질문부호</span><strong>{selectedSynthetic.text_statistics.question_mark_count}회</strong></div>
+                      <div><span>감탄부호</span><strong>{selectedSynthetic.text_statistics.exclamation_mark_count}회</strong></div>
+                      <div><span>존댓말 종결</span><strong>{pct(selectedSynthetic.text_statistics.polite_ending_message_ratio)}</strong></div>
+                      <div><span>토큰</span><strong>{selectedSynthetic.text_statistics.token_count}개</strong></div>
+                    </div>
+                    <div className="term-cloud" aria-label="빈출 토큰">
+                      {selectedSynthetic.text_statistics.top_terms.map((item) => (
+                        <span key={item.term}>{item.term}<small>{item.count}</small></span>
+                      ))}
+                    </div>
+                    <p className="structural-disclaimer">부호·길이·종결형·표면 토큰의 빈도만 셉니다. 긍정/부정/중립 비율이나 부드러움/강경함 같은 어조 라벨, 감정·심리·정신건강 상태는 계산하지 않습니다.</p>
+                  </div>
+                </div>
+
+                <div className="timeline-policy-strip synthetic-policy-strip">
+                  <span>가상 인물 {syntheticData.personas.length}명</span>
+                  <span>실데이터 입력 차단</span>
+                  <span>개인별 Slack NLP 0건</span>
+                  <span>원문 API 반환 0건</span>
+                  <span>감성·어조 추론 없음</span>
+                </div>
+              </>
+            )}
+          </section>
+        )}
 
         <section id="reports" className="section-shell">
           <div className="section-head"><div><div className="eyebrow">Data Operations</div><h2>월말 데이터 업데이트</h2><p>관리자가 같은 기간으로 내보낸 3종 보고서를 한 번에 업로드합니다. 분석 기간은 엑셀 상단의 표시 기간에서 자동으로 읽으며 여러 달이면 월별 feature로 나눠 처리합니다.</p></div></div>

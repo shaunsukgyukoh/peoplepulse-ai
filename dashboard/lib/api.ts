@@ -63,6 +63,64 @@ export type EmployeesResponse = {
   };
 };
 
+export type SyntheticActivityPoint = {
+  report_month: string;
+  web_search_events: number;
+  web_search_active_days: number;
+  document_usage_events: number;
+  document_active_days: number;
+  document_create_events: number;
+  document_modify_events: number;
+  document_view_events: number;
+  after_hours_search_ratio: number;
+  after_hours_document_ratio: number;
+  weekend_search_ratio: number;
+  weekend_document_ratio: number;
+};
+
+export type SyntheticTextStatistics = {
+  period_start: string | null;
+  period_end: string | null;
+  message_count: number;
+  non_whitespace_character_count: number;
+  token_count: number;
+  average_characters_per_message: number;
+  question_mark_count: number;
+  exclamation_mark_count: number;
+  polite_ending_message_count: number;
+  polite_ending_message_ratio: number;
+  top_terms: Array<{ term: string; count: number }>;
+};
+
+export type SyntheticPersona = {
+  canonical_employee_key: string;
+  employee_name: string;
+  department: string;
+  fictional: true;
+  activity_points: SyntheticActivityPoint[];
+  text_statistics: SyntheticTextStatistics;
+};
+
+export type SyntheticIndividualActivityResponse = {
+  enabled: boolean;
+  scope: "synthetic_demo_only";
+  unavailable_reason: string | null;
+  personas: SyntheticPersona[];
+  policy: {
+    synthetic_only: true;
+    production_blocked: true;
+    real_employee_data_allowed: false;
+    raw_messages_returned: false;
+    individual_slack_nlp_visible: false;
+    sentiment_or_tone_inference: false;
+    psychological_diagnosis: false;
+  };
+  sources?: {
+    activity: string;
+    text: string;
+  };
+};
+
 export type Overview = {
   generated_at: string;
   workforce: WorkforceSummary;

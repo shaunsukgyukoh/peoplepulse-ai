@@ -64,6 +64,11 @@ def employees() -> dict:
     }
 
 
+@router.get("/synthetic-demo/individual-activity")
+def synthetic_demo_individual_activity() -> dict:
+    return _employee_service().synthetic_individual_activity()
+
+
 @router.patch("/employees/{employee_id_hash}/key-staff")
 def update_key_staff(
     employee_id_hash: str,
